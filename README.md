@@ -13,8 +13,8 @@ $ rebar3 compile
 
 ### Prerequisites
 
-Tag expressions in hterl evaluate to valid EHTML as defined by `yaws`.
-While not a strict prerequisite it is recommended to have `yaws`installed for rendering the output.
+Tag expressions in hterl evaluate to valid EHTML as defined by Yaws.
+While not a strict prerequisite it is recommended to have Yaws installed for rendering the output.
 
 ## Example
 
@@ -30,13 +30,25 @@ unordered_list(Xs) ->
 	</ul>.
 ```
 
-Compile the file using
+Compile and test it.
 
 ```
-
 1> hterl:file("test.hterl").
+ok
+2> Out = test:unordered_list(["One", "Two"]).
+[{ul,[],[[[{li,[],["One"]}],[{li,[],["Two"]}]]]}]
+```
+
+The output is EHTML and can be rendered as HTML using a function from Yaws.
 
 ```
+3> io:format("~ts~n", [yaws_api:ehtml_expand(Out)]).
+<ul>
+<li>One</li>
+<li>Two</li></ul>
+ok
+```
+For more examples check out [examples/demo.hterl](examples/demo.hterl).
 
 ## Syntax
 
