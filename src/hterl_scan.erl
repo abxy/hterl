@@ -31,7 +31,7 @@ scan(Inport, Prompt, Line1) ->
 % I.e. "<atom" is parsed as a single tag_start token while "< atom" is parsed as
 % the operator < followed by an atom.
 % It also strips the output of any remaining white_space tokens and combines
-% "</" and "/>" to distinct tokens. Which, while not necessary
+% "</" and "/>" to distinct tokens.
 
 lex([]) ->
 	[];
