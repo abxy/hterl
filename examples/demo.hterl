@@ -1,0 +1,91 @@
+-module(demo).
+-compile(export_all).
+
+% Use tags as part of the expression syntax.
+
+bold(X) ->
+	<b> X </b>.
+
+
+% The body of a tag is an expression. The *value* of that expression is what shows in the output.
+% To output static strings you must quote them.
+
+hello() ->
+	<i> "Hello, World!" </i>.
+
+
+% Atoms and integers are allowed, so some strings will indeed work when not quoted
+% but that's not the approach I would prefer or recommend for static content.
+
+not_recommended() ->
+	<i> hello </i>.
+
+
+% Tags can be listed and nested directly. This works because tags following eachother are
+% considered a single expression.
+
+nested() ->
+	<h3>"Title"</h3>
+	<ul>
+		<li>1</li>
+		<li>2</li>
+	</ul>.
+
+
+% A tag body is not limited to a single expression,
+% a comma separated list of expressions.
+
+greet(Name) ->
+	<span> "Hello, ", <u> Name </u>, "!" </span>.
+
+
+% NB: To achieve the same result without the outer span, use a list.
+
+by_line_no_span(Name) ->
+	["Hello, ", <u> Name </u>, "!"].
+
+
+% These syntactic rules enable the full expressivity of Erlang to be used within tags.
+
+% Function calls
+
+table(Headers, Rows) ->
+	<table>
+		table_head(Headers),
+		<tbody>
+			lists:map(fun data_row/1, Rows)
+		</tbody>
+	</table>.
+
+% List comprehensions
+
+data_row(Data) ->
+	<tr>
+		[<td> X </td> || X <- Data]
+	</tr>.
+
+% As usual, functions return only the value of the last expression in the body,
+% so you can break up your function as you please.
+
+table_head(Headers) ->
+	UppercaseHeaders = lists:map(fun string:to_upper/1, Headers),
+	<thead>
+		<tr>
+			[<th> H </th> || H <- UppercaseHeaders]
+		</tr>
+	</thead>.
+
+% Attributes are supported, andd like the tag bodies they are bare expressions,
+% meaning literal strings have to be quoted, but variables do not.
+
+french_hello() ->
+	<i lang="fr">"Bonjour le monde!"</i>.
+
+web_link(Text, Url) ->
+	<a href=Url>Text</a>.
+
+% Unlike tag bodies, some expressions need to be wrapped in parentheses when they appear
+% in attributes. Notably, function calls have this requirement.
+% This restriction may be relaxed in future.
+
+
