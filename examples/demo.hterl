@@ -1,3 +1,5 @@
+% Compare this with the output in demo.erl
+
 -module(demo).
 -compile(export_all).
 
@@ -79,5 +81,23 @@ web_link(Text, Url) ->
 % Unlike tag bodies, some expressions need to be wrapped in parentheses when they appear
 % in attributes. Notably, function calls have this requirement.
 % This restriction may be relaxed in future.
+
+erlang_comments() ->
+    <p>
+        % Erlang comments may appear inside tag bodies, ...
+        "This is a paragraph of text"
+        " which continues on the next line."        
+    </p>
+    % between tag bodies, ...
+    <span
+        % and even in the opening tag.
+        style="background: pink;">
+    </span>.
+
+% HTML comments are not supported, but {pre_html, Text} can be used to work around that.
+html_comments() ->
+    <p>
+        {pre_html, "<!-- This comment will be emitted -->"}
+    </p>.
 
 

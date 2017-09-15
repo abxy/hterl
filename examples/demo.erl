@@ -59,3 +59,11 @@ web_link(Text, Url) ->
       <<"\">">>,
       hterl_api:interpolate(Text),
       <<"</a>">>]}.
+
+erlang_comments() ->
+    {pre_html,
+     <<"<p>This is a paragraph of text which continues on the next line"
+       ".</p><span style=\"background: pink;\"></span>">>}.
+
+html_comments() ->
+    {pre_html,<<"<p><!-- This comment will be emitted --></p>">>}.
