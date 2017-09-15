@@ -212,7 +212,7 @@ compile_tag_pre({tag, Anno, Name, Attrs, []}, Opts) ->
 	abstract_list(
 		[list_to_abstract_binary("<" ++ atom_to_list(Name), Anno)] ++
 		[compile_attr_pre(Attr, Opts) || Attr <- Attrs] ++
-		[list_to_abstract_binary("/>", Anno)]
+		[list_to_abstract_binary(html_end_tag(Name), Anno)]
 	, Anno);
 compile_tag_pre({tag, Anno, Name, Attrs, BodyExprs}, Opts) ->
 	abstract_list(
@@ -349,4 +349,31 @@ add_error(File, Anno, E, St) ->
 
 format_error({file_error, Reason}) ->
 	io_lib:fwrite("~ts",[file:format_error(Reason)]).
+
+
+
+%% Void elements must not have an end tag (</tag>) in HTML5, while for most
+%% elements a proper end tag (<tag></tag>, not <tag />) is mandatory.
+%%
+%% http://www.w3.org/TR/html5/syntax.html#void-elements
+%% http://www.w3.org/TR/html5/syntax.html#syntax-tag-omission
+
+-define(self_closing, "/>"). % slash ignored in HTML5
+
+html_end_tag(area) -> ?self_closing;
+html_end_tag(base) -> ?self_closing;
+html_end_tag(br) -> ?self_closing;
+html_end_tag(col) -> ?self_closing;
+html_end_tag(embed) -> ?self_closing;
+html_end_tag(hr) -> ?self_closing;
+html_end_tag(img) -> ?self_closing;
+html_end_tag(input) -> ?self_closing;
+html_end_tag(keygen) -> ?self_closing;
+html_end_tag(link) -> ?self_closing;
+html_end_tag(meta) -> ?self_closing;
+html_end_tag(param) -> ?self_closing;
+html_end_tag(source) -> ?self_closing;
+html_end_tag(track) -> ?self_closing;
+html_end_tag(wbr) -> ?self_closing;
+html_end_tag(Tag) -> "></" ++ atom_to_list(Tag) ++ ">".
 
