@@ -1,0 +1,7 @@
+-module(test).
+-compile(export_all).
+
+bc(Xs) -> <b x=$1 />.
+
+b(X) -> <b> <i>"Tack & hej!", $&</i>, [X], [$<|$<], [<<"&">>], <br></br> </b>.
+

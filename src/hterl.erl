@@ -1,33 +1,49 @@
 -module(hterl).
 
 
--export([file/1]).
+-export([file/1, file/2]).
 
 -export([report_error/1]).
 -export([format_error/1]).
 
 
 -record(state, {
+	infile,
 	inport,
+	outfile,
 	forms = [],
-	errors = []
+	errors = [],
+	options = []
 }).
 
 %%====================================================================
 %% API functions
 %%====================================================================
 
-
 file(Path) ->
-	infile(Path, #state{}).
+	file(Path, []).
+
+file(Path, Options) ->
+	St = start(Path, Options),
+	infile(St).
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
 
+start(InFileX, Options) ->
+	InFile = assure_extension(InFileX, ".hterl"),
+	OutFileX = filename:rootname(InFile, ".hterl"),
+	OutFile = assure_extension(OutFileX, ".erl"),
+	#state{
+		infile = InFile,
+		outfile = OutFile,
+		options = Options
+	}.
 
-infile(Path, St0) ->
-	St = case file:open(Path, [read, read_ahead]) of
+infile(St0) ->
+	InFile = St0#state.infile,
+	St = case file:open(InFile, [read, read_ahead]) of
 		{ok, Inport} ->
 			try
 				St1 = St0#state{inport = Inport},
@@ -36,9 +52,20 @@ infile(Path, St0) ->
 				ok = file:close(Inport)
 			end;
 		{error, Reason} ->
-			add_error(Path, none, {file_error, Reason}, St0)
+			add_error(InFile, none, {file_error, Reason}, St0)
 	end,
 	hterl_ret(St).
+
+
+assure_extension(File, Ext) ->
+	lists:concat([strip_extension(File, Ext), Ext]).
+
+%% Assumes File is a filename.
+strip_extension(File, Ext) ->
+	case filename:extension(File) of
+		Ext -> filename:rootname(File);
+		_Other -> File
+	end.
 
 hterl_ret(St) ->
 	report_errors(St),
@@ -55,14 +82,13 @@ passes(St) ->
 	output(transform(parse(St))).
 
 transform(St) ->
-	St#state{forms = [compile_form(F) || F <- St#state.forms]}.
+	Opts = St#state.options,
+	St#state{forms = [compile_form(F, Opts) || F <- St#state.forms]}.
 
 
-output(#state{forms=Forms} = St) ->
-	case compile:forms(Forms) of
-		{ok, ModuleName, Binary} ->			
-			file:write_file(atom_to_list(ModuleName) ++ ".beam", Binary)
-	end,
+output(St) ->
+	#state{forms=Forms, outfile=OutFile} = St,
+	file:write_file(OutFile, string:join([erl_pp:form(Form) || Form <- Forms], "\n")),
 	St.
 
 
@@ -106,60 +132,219 @@ read_form(Inport, Line) ->
 	end.
 
 
-compile_form({function, Anno, Name, Arity, Clauses}) ->
-	{function, Anno, Name, Arity, compile_clauses(Clauses)};
-compile_form(Form) ->
+compile_form({function, Anno, Name, Arity, Clauses}, Opts) ->
+	{function, Anno, Name, Arity, compile_clauses(Clauses, Opts)};
+compile_form(Form, _Opts) ->
 	Form.
 
 
-compile_clauses(Clauses) ->
-	[compile_clause(C) || C <- Clauses].
+compile_clauses(Clauses, Opts) ->
+	[compile_clause(C, Opts) || C <- Clauses].
 
-compile_clause({clause, Anno, Patterns, Guards, Body}) ->
-	{clause, Anno, Patterns, Guards, compile_exprs(Body)}.
+compile_clause({clause, Anno, Patterns, Guards, Body}, Opts) ->
+	{clause, Anno, Patterns, Guards, compile_exprs(Body, Opts)}.
 
-compile_exprs(Exprs) ->
-	[compile_expr(E) || E <- Exprs].
+compile_exprs(Exprs, Opts) ->
+	[compile_expr(E, Opts) || E <- Exprs].
 
-compile_expr({tags, Anno, Tags}) ->
-	abstract_list([compile_tag(T) || T <- Tags], Anno);
-compile_expr({'case', Anno, Expr, Clauses}) ->
-	{'case', Anno, compile_expr(Expr), compile_clauses(Clauses)};
-compile_expr({'if', Anno, Clauses}) ->
-	{'if', Anno, compile_clauses(Clauses)};
-compile_expr({'receive', Anno, Clauses}) ->
-	{'receive', Anno, compile_clauses(Clauses)};
-compile_expr({block, Anno, Exprs}) ->
-	{block, Anno, compile_exprs(Exprs)};
-compile_expr({match, Anno, LHS, RHS}) ->
-	{match, Anno, LHS, compile_expr(RHS)};
-compile_expr({call, Anno, Fun, Args}) ->
-	{call, Anno, Fun, compile_exprs(Args)};
-compile_expr({lc, Anno, Expr, LcExprs}) ->
-	{lc, Anno, compile_expr(Expr), LcExprs};
-compile_expr({tuple, Anno, Exprs}) ->
-	{tuple, Anno, compile_exprs(Exprs)};
-compile_expr({cons, Anno, Head, Tail}) ->
-	{cons, Anno, compile_expr(Head), compile_expr(Tail)};
-compile_expr(Expr) ->
+compile_expr({tags, _, _} = TagsExpr, Opts) ->
+	case lists:member(pre, Opts) of
+		true -> compile_tags_pre(TagsExpr, Opts);
+		false -> compile_tags_ehtml(TagsExpr, Opts)
+	end;
+compile_expr({'case', Anno, Expr, Clauses}, Opts) ->
+	{'case', Anno, compile_expr(Expr, Opts), compile_clauses(Clauses, Opts)};
+compile_expr({'if', Anno, Clauses}, Opts) ->
+	{'if', Anno, compile_clauses(Clauses, Opts)};
+compile_expr({'receive', Anno, Clauses}, Opts) ->
+	{'receive', Anno, compile_clauses(Clauses, Opts)};
+compile_expr({block, Anno, Exprs}, Opts) ->
+	{block, Anno, compile_exprs(Exprs, Opts)};
+compile_expr({match, Anno, LHS, RHS}, Opts) ->
+	{match, Anno, LHS, compile_expr(RHS, Opts)};
+compile_expr({call, Anno, Fun, Args}, Opts) ->
+	{call, Anno, Fun, compile_exprs(Args, Opts)};
+compile_expr({lc, Anno, Expr, LcExprs}, Opts) ->
+	{lc, Anno, compile_expr(Expr, Opts), LcExprs};
+compile_expr({tuple, Anno, Exprs}, Opts) ->
+	{tuple, Anno, compile_exprs(Exprs, Opts)};
+compile_expr({cons, Anno, Head, Tail}, Opts) ->
+	{cons, Anno, compile_expr(Head, Opts), compile_expr(Tail, Opts)};
+compile_expr(Expr, _Opts) ->
 	Expr.
 
+compile_tags_ehtml({tags, Anno, Tags}, Opts) ->
+	abstract_list([compile_tag_ehtml(T, Opts) || T <- Tags], Anno).
 
-compile_tag({tag, Anno, Name, Attrs, Exprs}) ->
+compile_tag_ehtml({tag, Anno, Name, [], []}, _Opts) ->
+	{tuple, Anno, [
+		{atom, Anno, Name}
+	]};
+compile_tag_ehtml({tag, Anno, Name, Attrs, []}, Opts) ->
 	{tuple, Anno, [
 		{atom, Anno, Name}, 
-		compile_attrs(Attrs, Anno),
-		abstract_list(compile_exprs(Exprs), Anno)
+		compile_attrs(Attrs, Anno, Opts)
+	]};
+compile_tag_ehtml({tag, Anno, Name, Attrs, Exprs}, Opts) ->
+	{tuple, Anno, [
+		{atom, Anno, Name}, 
+		compile_attrs(Attrs, Anno, Opts),
+		abstract_list(compile_exprs(Exprs, Opts), Anno)
 	]}.
 
+compile_attrs(Attrs, Anno, Opts) ->
+	abstract_list([compile_attr(Attr, Opts) || Attr <- Attrs], Anno).
 
-compile_attrs(Attrs, Anno) ->
-	abstract_list([compile_attr(Attr) || Attr <- Attrs], Anno).
-
-compile_attr({min_attr, Anno, Name}) ->
+compile_attr({min_attr, Anno, Name}, _Opts) ->
 	{atom, Anno, Name};
-compile_attr({attr, Anno, Name, Expr}) ->
-	{tuple, Anno, [{atom, Anno, Name}, compile_expr(Expr)]}.
+compile_attr({attr, Anno, Name, Expr}, Opts) ->
+	{tuple, Anno, [{atom, Anno, Name}, compile_expr(Expr, Opts)]}.
+
+%% pre
+
+compile_tags_pre({tags, Anno, Tags}, Opts) ->
+	{tuple, Anno, [
+		{atom, Anno, pre_html},
+		compress(flatten(abstract_list([compile_tag_pre(T, Opts) || T <- Tags], Anno)))
+	]}.
+
+compile_tag_pre({tag, Anno, Name, Attrs, []}, Opts) ->
+	abstract_list(
+		[list_to_abstract_binary("<" ++ atom_to_list(Name), Anno)] ++
+		[compile_attr_pre(Attr, Opts) || Attr <- Attrs] ++
+		[list_to_abstract_binary("/>", Anno)]
+	, Anno);
+compile_tag_pre({tag, Anno, Name, Attrs, BodyExprs}, Opts) ->
+	abstract_list(
+		[list_to_abstract_binary("<" ++ atom_to_list(Name), Anno)] ++
+		[compile_attr_pre(Attr, Opts) || Attr <- Attrs] ++
+		[list_to_abstract_binary(">", Anno)] ++
+		[compile_body_expr_pre(Expr, Opts) || Expr <- BodyExprs] ++
+		[list_to_abstract_binary("</" ++ atom_to_list(Name) ++ ">", Anno)]
+	, Anno).
+
+compile_attr_pre({min_attr, Anno, Name}, _Opts) ->
+	list_to_abstract_binary(" " ++ atom_to_list(Name), Anno);
+compile_attr_pre({attr, Anno, Name, Expr}, Opts) ->
+	abstract_list([
+		list_to_abstract_binary(" " ++ atom_to_list(Name) ++ "=\"", Anno),
+		compile_attr_expr_pre(Expr, Opts),
+		list_to_abstract_binary("\"", Anno)
+	], Anno).
+
+compile_attr_expr_pre(Expr, Opts) ->
+	case compile_expr(Expr, Opts) of
+		{string, Anno, Str} ->
+			erl_parse:abstract(hterl_api:htmlize(Str), Anno);
+		{char, Anno, Ch} ->
+			erl_parse:abstract(hterl_api:htmlize_char(Ch), Anno);
+		{integer, Anno, Ch} when Ch >= 0 andalso Ch =< 255 ->
+			erl_parse:abstract(hterl_api:htmlize_char(Ch), Anno);
+		{bin, Anno, _} = BinAbs ->
+			try
+				Bin = erl_parse:normalise(BinAbs),
+				erl_parse:abstract(hterl_api:htmlize(Bin), Anno)
+			catch
+				_:_ ->
+					interpolate(BinAbs)
+			end;
+		CompiledExpr ->
+			interpolate(CompiledExpr)
+	end.
+
+compile_body_expr_pre(Expr, Opts) ->
+	case compile_expr(Expr, Opts) of
+		{string, Anno, Str} ->
+			erl_parse:abstract(hterl_api:htmlize(Str), Anno);
+		{char, Anno, Ch} ->
+			erl_parse:abstract(hterl_api:htmlize_char(Ch), Anno);
+		{integer, Anno, Ch} when Ch >= 0 andalso Ch =< 255 ->
+			erl_parse:abstract(hterl_api:htmlize_char(Ch), Anno);
+		{bin, Anno, _} = BinAbs ->
+			try
+				Bin = erl_parse:normalise(BinAbs),
+				erl_parse:abstract(hterl_api:htmlize(Bin), Anno)
+			catch
+				_:_ ->
+					interpolate(BinAbs)
+			end;
+		{cons, Anno, H, T} ->
+			{cons, Anno, compile_body_expr_pre(H, Opts), compile_body_expr_pre(T, Opts)};
+		{nil, _} = Nil ->
+			Nil;
+		{lc, Anno, E, LcExprs} ->
+			{lc, Anno, compile_body_expr_pre(E, Opts), LcExprs};
+		{tuple, _, [{atom, _, pre_html}, T]} ->
+			T;
+		CompiledExpr ->
+			interpolate(CompiledExpr)
+	end.
+
+interpolate(Expr) ->
+	{call, 0, {remote, 0, {atom, 0, hterl_api}, {atom, 0, interpolate}}, [Expr]}.
+
+
+compress(List) ->
+	case compress([], List) of
+		[Single] -> Single;
+		Compressed -> abstract_list(Compressed, 0)
+	end.
+
+
+compress(DataPrefix, {nil, _}) ->
+	[pretty_abstract_binary(iolist_to_binary(DataPrefix))];
+compress(DataPrefix, {cons, _, H, T}) ->
+	case extract_data(H) of
+		error ->
+			Bin = pretty_abstract_binary(iolist_to_binary(DataPrefix)),
+			[Bin, H | compress([], T)];
+		Data ->
+			compress([DataPrefix|Data], T)
+	end.
+
+extract_data({char, _, Ch}) -> <<Ch>>;
+extract_data({integer, _, Int}) -> <<Int>>;
+extract_data({string, _, Ch}) -> Ch;
+extract_data({bin, _, _} = BinAbs) ->
+	% Must be normalisable, otherwise it would be wrapped in a call to interpolate.
+	erl_parse:normalise(BinAbs);
+extract_data(_) -> error.
+
+
+pretty_abstract_binary(Bin) ->
+	list_to_abstract_binary(lists:flatten([print_char(B) || <<B>> <= Bin]), 0).
+
+
+print_char(C) when is_integer(C), C >= $\040, C =< $\176 ->
+    C;
+print_char(C) when is_integer(C), C >= $\240, C =< $\377 ->
+    C;
+print_char($\r) -> $\r;
+print_char($\n) -> $\n;
+print_char($\t) -> $\t;
+print_char($\v) -> $\v;
+print_char($\b) -> $\b;
+print_char($\f) -> $\f;
+print_char($\e) -> $\e;
+print_char(C) -> [$\ | integer_to_list(C, 8)].
+
+
+flatten(List) ->
+	flatten_append(List, {nil, 0}).
+
+flatten_append({cons, _Anno, {nil, _}, T}, Tail) ->
+	flatten_append(T, Tail);
+flatten_append({cons, _Anno, {cons, _, _, _} = H, T}, Tail) ->
+	flatten_append(H, flatten_append(T, Tail));
+flatten_append({cons, Anno, H, T}, Tail) ->
+	{cons, Anno, H, flatten_append(T, Tail)};
+flatten_append({nil, _}, Tail) ->
+	Tail;
+flatten_append(X, Tail) ->
+	{cons, 0, X, Tail}.
+
+list_to_abstract_binary(Str, Anno) when is_list(Str) ->
+	{bin, Anno, [{bin_element, Anno, {string, Anno, Str}, default, default}]}.
 
 
 abstract_list([], Anno) ->
