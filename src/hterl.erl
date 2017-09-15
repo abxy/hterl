@@ -312,21 +312,7 @@ extract_data(_) -> error.
 
 
 pretty_abstract_binary(Bin) ->
-	list_to_abstract_binary(lists:flatten([print_char(B) || <<B>> <= Bin]), 0).
-
-
-print_char(C) when is_integer(C), C >= $\040, C =< $\176 ->
-    C;
-print_char(C) when is_integer(C), C >= $\240, C =< $\377 ->
-    C;
-print_char($\r) -> $\r;
-print_char($\n) -> $\n;
-print_char($\t) -> $\t;
-print_char($\v) -> $\v;
-print_char($\b) -> $\b;
-print_char($\f) -> $\f;
-print_char($\e) -> $\e;
-print_char(C) -> [$\ | integer_to_list(C, 8)].
+	list_to_abstract_binary(binary_to_list(Bin), 0).
 
 
 flatten(List) ->

@@ -13,22 +13,14 @@ bold(X) ->
 hello() ->
 	<i> "Hello, World!" </i>.
 
-
-% Atoms and integers are allowed, so some strings will indeed work when not quoted
-% but that's not the approach I would prefer or recommend for static content.
-
-not_recommended() ->
-	<i> hello </i>.
-
-
-% Tags can be listed and nested directly. This works because tags following eachother are
+% Tags can be listed and nested directly. This works because tags following each other are
 % considered a single expression.
 
 nested() ->
 	<h3>"Title"</h3>
 	<ul>
-		<li>1</li>
-		<li>2</li>
+		<li>"1"</li>
+		<li>"2"</li>
 	</ul>.
 
 
@@ -39,9 +31,9 @@ greet(Name) ->
 	<span> "Hello, ", <u> Name </u>, "!" </span>.
 
 
-% NB: To achieve the same result without the outer span, use a list.
+% To achieve the same result without the outer span, use a list.
 
-by_line_no_span(Name) ->
+greet_alt(Name) ->
 	["Hello, ", <u> Name </u>, "!"].
 
 

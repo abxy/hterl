@@ -8,11 +8,8 @@ bold(X) ->
 hello() ->
     {pre_html,<<"<i>Hello, World!</i>">>}.
 
-not_recommended() ->
-    {pre_html,[<<"<i>">>,hterl_api:interpolate(hello),<<"</i>">>]}.
-
 nested() ->
-    {pre_html,<<"<h3>Title</h3><ul><li> 1</li><li> 2</li></ul>">>}.
+    {pre_html,<<"<h3>Title</h3><ul><li>1</li><li>2</li></ul>">>}.
 
 greet(Name) ->
     {pre_html,
@@ -20,7 +17,7 @@ greet(Name) ->
       hterl_api:interpolate(Name),
       <<"</u>!</span>">>]}.
 
-by_line_no_span(Name) ->
+greet_alt(Name) ->
     ["Hello, ",
      {pre_html,[<<"<u>">>,hterl_api:interpolate(Name),<<"</u>">>]},
      "!"].
