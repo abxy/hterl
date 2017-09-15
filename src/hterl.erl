@@ -148,7 +148,7 @@ compile_exprs(Exprs, Opts) ->
 	[compile_expr(E, Opts) || E <- Exprs].
 
 compile_expr({tags, _, _} = TagsExpr, Opts) ->
-	case lists:member(pre, Opts) of
+	case proplists:get_bool(precompile, Opts) of
 		true -> compile_tags_pre(TagsExpr, Opts);
 		false -> compile_tags_ehtml(TagsExpr, Opts)
 	end;
