@@ -173,8 +173,14 @@ compile_expr({cons, Anno, Head, Tail}, Opts) ->
 compile_expr(Expr, _Opts) ->
 	Expr.
 
+
 compile_tags_ehtml({tags, Anno, Tags}, Opts) ->
-	abstract_list([compile_tag_ehtml(T, Opts) || T <- Tags], Anno).
+    case [compile_tag_ehtml(T, Opts) || T <- Tags] of
+        [CompiledTag] ->
+            CompiledTag;
+        CompiledTags ->
+            abstract_list(CompiledTags, Anno)
+    end.
 
 compile_tag_ehtml({tag, Anno, Name, [], []}, _Opts) ->
 	{tuple, Anno, [
