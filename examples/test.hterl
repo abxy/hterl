@@ -1,7 +1,7 @@
 -module(test).
--compile(export_all).
+-export([unordered_list/1]).
 
-bc(Xs) -> <b x=$1 />.
-
-b(X) -> <b> <i>"Tack & hej!", $&</i>, [X], [$<|$<], [<<"&">>], <br></br> </b>.
-
+unordered_list(Xs) ->
+	<ul>
+		[ <li> X </li> || X <- Xs ]
+	</ul>.
