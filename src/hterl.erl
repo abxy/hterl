@@ -158,21 +158,44 @@ compile_expr({'if', Anno, Clauses}, Opts) ->
 	{'if', Anno, compile_clauses(Clauses, Opts)};
 compile_expr({'receive', Anno, Clauses}, Opts) ->
 	{'receive', Anno, compile_clauses(Clauses, Opts)};
+compile_expr({'catch', Anno, Expr}, Opts) ->
+	{'catch', Anno, compile_expr(Expr, Opts)};
+compile_expr({'try', Anno, TryBody, MatchClauses, CatchClauses, AfterBody}, Opts) ->
+	{'try', Anno, 
+        compile_exprs(TryBody, Opts),
+        compile_clauses(MatchClauses, Opts),
+        compile_clauses(CatchClauses, Opts),
+        compile_exprs(AfterBody, Opts)};
 compile_expr({block, Anno, Exprs}, Opts) ->
 	{block, Anno, compile_exprs(Exprs, Opts)};
 compile_expr({match, Anno, LHS, RHS}, Opts) ->
-	{match, Anno, LHS, compile_expr(RHS, Opts)};
+	{match, Anno, compile_expr(LHS, Opts), compile_expr(RHS, Opts)};
 compile_expr({call, Anno, Fun, Args}, Opts) ->
 	{call, Anno, Fun, compile_exprs(Args, Opts)};
+compile_expr({bc, Anno, Expr, LcExprs}, Opts) ->
+	{bc, Anno, compile_expr(Expr, Opts), compile_lc_exprs(LcExprs, Opts)};
 compile_expr({lc, Anno, Expr, LcExprs}, Opts) ->
-	{lc, Anno, compile_expr(Expr, Opts), LcExprs};
+	{lc, Anno, compile_expr(Expr, Opts), compile_lc_exprs(LcExprs, Opts)};
 compile_expr({tuple, Anno, Exprs}, Opts) ->
 	{tuple, Anno, compile_exprs(Exprs, Opts)};
 compile_expr({cons, Anno, Head, Tail}, Opts) ->
 	{cons, Anno, compile_expr(Head, Opts), compile_expr(Tail, Opts)};
+compile_expr({op, Anno, Op, Expr}, Opts) ->
+	{op, Anno, Op, compile_expr(Expr, Opts)};
+compile_expr({op, Anno, Op, Expr1, Expr2}, Opts) ->
+	{op, Anno, Op, compile_expr(Expr1, Opts), compile_expr(Expr2, Opts)};
 compile_expr(Expr, _Opts) ->
 	Expr.
 
+compile_lc_exprs(LcExprs, Opts) ->
+	[compile_lc_expr(E, Opts) || E <- LcExprs].
+
+compile_lc_expr({generate, Anno, Pattern, Expr}, Opts) ->
+    {generate, Anno, compile_expr(Pattern, Opts), compile_expr(Expr, Opts)};
+compile_lc_expr({b_generate, Anno, BinPattern, Expr}, Opts) ->
+    {b_generate, Anno, BinPattern, compile_expr(Expr, Opts)};
+compile_lc_expr(Expr, Opts) ->
+    compile_expr(Expr, Opts).
 
 compile_tags_ehtml({tags, Anno, Tags}, Opts) ->
     case [compile_tag_ehtml(T, Opts) || T <- Tags] of
