@@ -266,19 +266,19 @@ compile_attr_expr_pre(Expr, Opts) ->
 		{string, Anno, Str} ->
 			erl_parse:abstract(hterl_api:htmlize(Str), Anno);
 		{char, Anno, Ch} ->
-			erl_parse:abstract(hterl_api:htmlize_char(Ch), Anno);
-		{integer, Anno, Ch} when Ch >= 0 andalso Ch =< 255 ->
-			erl_parse:abstract(hterl_api:htmlize_char(Ch), Anno);
+			erl_parse:abstract(integer_to_list(Ch), Anno);
+		{integer, Anno, Int} ->
+			erl_parse:abstract(integer_to_list(Int), Anno);
 		{bin, Anno, _} = BinAbs ->
 			try
 				Bin = erl_parse:normalise(BinAbs),
 				erl_parse:abstract(hterl_api:htmlize(Bin), Anno)
 			catch
 				_:_ ->
-					interpolate(BinAbs)
+					interpolate_attr(BinAbs)
 			end;
 		CompiledExpr ->
-			interpolate(CompiledExpr)
+			interpolate_attr(CompiledExpr)
 	end.
 
 compile_body_expr_pre(Expr, Opts) ->
@@ -312,6 +312,8 @@ compile_body_expr_pre(Expr, Opts) ->
 interpolate(Expr) ->
 	{call, 0, {remote, 0, {atom, 0, hterl_api}, {atom, 0, interpolate}}, [Expr]}.
 
+interpolate_attr(Expr) ->
+    {call, 0, {remote, 0, {atom, 0, hterl_api}, {atom, 0, interpolate_attr}}, [Expr]}.
 
 compress(List) ->
 	case compress([], List) of
