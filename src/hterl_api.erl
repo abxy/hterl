@@ -1,6 +1,7 @@
 -module(hterl_api).
 -export([htmlize/1, htmlize_char/1]).
 -export([interpolate/1, interpolate_attr/1]).
+-export([render/1, render/3]).
 
 %% htmlize
 htmlize(Bin) when is_binary(Bin) ->
@@ -44,7 +45,7 @@ htmlize_l([X|Tail], Ack) when is_list(X) ->
     X2 = htmlize_l(X),
 htmlize_l(Tail, [X2|Ack]).
 
-
+%% interpolate
 interpolate(Ch) when Ch >= 0, Ch =< 255 -> hterl_api:htmlize_char(Ch);
 interpolate(Bin) when is_binary(Bin) -> hterl_api:htmlize(Bin);
 interpolate({pre_html, X}) -> X;
@@ -60,3 +61,75 @@ value2string(Binary) when is_binary(Binary) -> Binary;
 value2string(Integer) when is_integer(Integer) -> integer_to_list(Integer);
 value2string(Float) when is_float(Float) -> float_to_list(Float).
 
+value2string(Atom, _InEncoding, OutEncoding) when is_atom(Atom) ->
+    atom_to_binary(Atom, OutEncoding);
+value2string(String, InEncoding, OutEncoding) when is_list(String) ->
+    unicode:characters_to_binary(String, InEncoding, OutEncoding);
+value2string(Binary, _InEncoding, _OutEncoding) when is_binary(Binary) ->
+    Binary;
+value2string(Integer, _InEncoding, _OutEncoding) when is_integer(Integer) ->
+    integer_to_list(Integer);
+value2string(Float, _InEncoding, _OutEncoding) when is_float(Float) ->
+    float_to_list(Float).
+
+%% render
+
+render(Element) ->
+    render(Element, unicode, unicode).
+
+
+render(Ch, _InEncoding, _OutEncoding) when Ch >= 0 andalso Ch =< 127 ->
+    htmlize_char(Ch);
+render(Ch, InEncoding, OutEncoding) when Ch >= 128 andalso Ch =< 255 ->
+    unicode:characters_to_binary([Ch], InEncoding, OutEncoding);
+render(Bin, _InEncoding, _OutEncoding) when is_binary(Bin) ->
+    htmlize(Bin);
+render({pre_html, String}, _InEncoding, _OutEncoding) ->
+    String;
+render({Tag}, _InEncoding, OutEncoding) ->
+    [$<, atom_to_binary(Tag, OutEncoding) | html_end_tag(Tag)];
+render({Tag, Attrs}, InEncoding, OutEncoding) ->
+    TagString = atom_to_binary(Tag, OutEncoding),
+    AttrsString = render_attrs(Attrs, InEncoding, OutEncoding),
+    [$<, TagString, AttrsString | html_end_tag(Tag)];
+render({Tag, Attrs, Body}, InEncoding, OutEncoding) ->
+    TagString = atom_to_binary(Tag, OutEncoding),
+    AttrsString = render_attrs(Attrs, InEncoding, OutEncoding),
+    BodyString = render(Body, InEncoding, OutEncoding),
+    [$<, TagString, AttrsString, $>, BodyString, $<, $/, TagString, $>];
+render([], _InEncoding, _OutEncoding) ->
+    [];
+render([H|T], InEncoding, OutEncoding) ->
+    [render(H, InEncoding, OutEncoding) | render(T, InEncoding, OutEncoding)].
+
+render_attrs([], _InEnc, _OutEnc) -> [];
+render_attrs([Attr|Tail], InEnc, OutEnc) when is_atom(Attr) ->
+    [($ ), atom_to_binary(Attr, OutEnc) | render_attrs(Tail, InEnc, OutEnc)];
+render_attrs([{Name, Value}|Tail], InEnc, OutEnc) when is_atom(Name) ->
+    ValueStr = htmlize(value2string(Value, InEnc, OutEnc)),
+    [($ ), atom_to_binary(Name, OutEnc), $=, $", ValueStr, $" | render_attrs(Tail, InEnc, OutEnc)].
+
+%% Void elements must not have an end tag (</tag>) in HTML5, while for most
+%% elements a proper end tag (<tag></tag>, not <tag />) is mandatory.
+%%
+%% http://www.w3.org/TR/html5/syntax.html#void-elements
+%% http://www.w3.org/TR/html5/syntax.html#syntax-tag-omission
+
+-define(self_closing, "/>"). % slash ignored in HTML5
+
+html_end_tag(area) -> ?self_closing;
+html_end_tag(base) -> ?self_closing;
+html_end_tag(br) -> ?self_closing;
+html_end_tag(col) -> ?self_closing;
+html_end_tag(embed) -> ?self_closing;
+html_end_tag(hr) -> ?self_closing;
+html_end_tag(img) -> ?self_closing;
+html_end_tag(input) -> ?self_closing;
+html_end_tag(keygen) -> ?self_closing;
+html_end_tag(link) -> ?self_closing;
+html_end_tag(meta) -> ?self_closing;
+html_end_tag(param) -> ?self_closing;
+html_end_tag(source) -> ?self_closing;
+html_end_tag(track) -> ?self_closing;
+html_end_tag(wbr) -> ?self_closing;
+html_end_tag(Tag) -> "></" ++ atom_to_list(Tag) ++ ">".
