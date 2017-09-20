@@ -83,7 +83,7 @@ passes(St) ->
 
 transform(St) ->
 	Opts = St#state.options,
-	St#state{forms = [compile_form(F, Opts) || F <- St#state.forms]}.
+	St#state{forms = [erl_syntax:revert(rewrite(Form, Opts)) || Form <- St#state.forms]}.
 
 
 output(St) ->
@@ -131,243 +131,193 @@ read_form(Inport, Line) ->
 			end}
 	end.
 
-
-compile_form({function, Anno, Name, Arity, Clauses}, Opts) ->
-	{function, Anno, Name, Arity, compile_clauses(Clauses, Opts)};
-compile_form(Form, _Opts) ->
-	Form.
-
-
-compile_clauses(Clauses, Opts) ->
-	[compile_clause(C, Opts) || C <- Clauses].
-
-compile_clause({clause, Anno, Patterns, Guards, Body}, Opts) ->
-	{clause, Anno, Patterns, Guards, compile_exprs(Body, Opts)}.
-
-compile_exprs(Exprs, Opts) ->
-	[compile_expr(E, Opts) || E <- Exprs].
-
-compile_expr({tags, _, _} = TagsExpr, Opts) ->
+rewrite({tags, _Anno, Tags}, Opts) ->
 	case proplists:get_bool(precompile, Opts) of
-		true -> compile_tags_pre(TagsExpr, Opts);
-		false -> compile_tags_ehtml(TagsExpr, Opts)
+		true -> rewrite_tags_pre(Tags, Opts);
+		false -> rewrite_tags_ehtml(Tags, Opts)
 	end;
-compile_expr({'case', Anno, Expr, Clauses}, Opts) ->
-	{'case', Anno, compile_expr(Expr, Opts), compile_clauses(Clauses, Opts)};
-compile_expr({'if', Anno, Clauses}, Opts) ->
-	{'if', Anno, compile_clauses(Clauses, Opts)};
-compile_expr({'receive', Anno, Clauses}, Opts) ->
-	{'receive', Anno, compile_clauses(Clauses, Opts)};
-compile_expr({'catch', Anno, Expr}, Opts) ->
-	{'catch', Anno, compile_expr(Expr, Opts)};
-compile_expr({'try', Anno, TryBody, MatchClauses, CatchClauses, AfterBody}, Opts) ->
-	{'try', Anno, 
-        compile_exprs(TryBody, Opts),
-        compile_clauses(MatchClauses, Opts),
-        compile_clauses(CatchClauses, Opts),
-        compile_exprs(AfterBody, Opts)};
-compile_expr({block, Anno, Exprs}, Opts) ->
-	{block, Anno, compile_exprs(Exprs, Opts)};
-compile_expr({match, Anno, LHS, RHS}, Opts) ->
-	{match, Anno, compile_expr(LHS, Opts), compile_expr(RHS, Opts)};
-compile_expr({call, Anno, Fun, Args}, Opts) ->
-	{call, Anno, Fun, compile_exprs(Args, Opts)};
-compile_expr({bc, Anno, Expr, LcExprs}, Opts) ->
-	{bc, Anno, compile_expr(Expr, Opts), compile_lc_exprs(LcExprs, Opts)};
-compile_expr({lc, Anno, Expr, LcExprs}, Opts) ->
-	{lc, Anno, compile_expr(Expr, Opts), compile_lc_exprs(LcExprs, Opts)};
-compile_expr({tuple, Anno, Exprs}, Opts) ->
-	{tuple, Anno, compile_exprs(Exprs, Opts)};
-compile_expr({cons, Anno, Head, Tail}, Opts) ->
-	{cons, Anno, compile_expr(Head, Opts), compile_expr(Tail, Opts)};
-compile_expr({op, Anno, Op, Expr}, Opts) ->
-	{op, Anno, Op, compile_expr(Expr, Opts)};
-compile_expr({op, Anno, Op, Expr1, Expr2}, Opts) ->
-	{op, Anno, Op, compile_expr(Expr1, Opts), compile_expr(Expr2, Opts)};
-compile_expr(Expr, _Opts) ->
-	Expr.
+rewrite(Tree, Opts) ->
+	Fun = fun (T) -> rewrite(T, Opts) end,
+	erl_syntax_lib:map_subtrees(Fun, Tree).
 
-compile_lc_exprs(LcExprs, Opts) ->
-	[compile_lc_expr(E, Opts) || E <- LcExprs].
 
-compile_lc_expr({generate, Anno, Pattern, Expr}, Opts) ->
-    {generate, Anno, compile_expr(Pattern, Opts), compile_expr(Expr, Opts)};
-compile_lc_expr({b_generate, Anno, BinPattern, Expr}, Opts) ->
-    {b_generate, Anno, BinPattern, compile_expr(Expr, Opts)};
-compile_lc_expr(Expr, Opts) ->
-    compile_expr(Expr, Opts).
+rewrite_tags_ehtml(Tags, Opts) ->
+	list_unless_singleton([rewrite_tag_ehtml(Tag, Opts) || Tag <- Tags]).
 
-compile_tags_ehtml({tags, Anno, Tags}, Opts) ->
-    case [compile_tag_ehtml(T, Opts) || T <- Tags] of
-        [CompiledTag] ->
-            CompiledTag;
-        CompiledTags ->
-            abstract_list(CompiledTags, Anno)
-    end.
+rewrite_tag_ehtml({tag, _Anno, Name, [], []}, _Opts) ->
+	erl_syntax:tuple([erl_syntax:atom(Name)]);
+rewrite_tag_ehtml({tag, _Anno, Name, Attrs, []}, Opts) ->
+	erl_syntax:tuple([
+		erl_syntax:atom(Name),
+		rewrite_attrs_ehtml(Attrs, Opts)
+	]);
+rewrite_tag_ehtml({tag, _Anno, Name, Attrs, Body}, Opts) ->
+	erl_syntax:tuple([
+		erl_syntax:atom(Name),
+		rewrite_attrs_ehtml(Attrs, Opts),
+		list_unless_singleton([rewrite(Expr, Opts) || Expr <- Body])
+	]).
 
-compile_tag_ehtml({tag, Anno, Name, [], []}, _Opts) ->
-	{tuple, Anno, [
-		{atom, Anno, Name}
-	]};
-compile_tag_ehtml({tag, Anno, Name, Attrs, []}, Opts) ->
-	{tuple, Anno, [
-		{atom, Anno, Name}, 
-		compile_attrs(Attrs, Anno, Opts)
-	]};
-compile_tag_ehtml({tag, Anno, Name, Attrs, Exprs}, Opts) ->
-	{tuple, Anno, [
-		{atom, Anno, Name}, 
-		compile_attrs(Attrs, Anno, Opts),
-		abstract_list(compile_exprs(Exprs, Opts), Anno)
-	]}.
+rewrite_attrs_ehtml(Attrs, Opts) ->
+	erl_syntax:list([rewrite_attr_ehtml(Attr, Opts) || Attr <- Attrs]).
 
-compile_attrs(Attrs, Anno, Opts) ->
-	abstract_list([compile_attr(Attr, Opts) || Attr <- Attrs], Anno).
+rewrite_attr_ehtml({min_attr, _Anno, Name}, _Opts) ->
+	erl_syntax:atom(Name);
+rewrite_attr_ehtml({attr, _Anno, Name, Expr}, Opts) ->
+	erl_syntax:tuple([erl_syntax:atom(Name), rewrite(Expr, Opts)]).
 
-compile_attr({min_attr, Anno, Name}, _Opts) ->
-	{atom, Anno, Name};
-compile_attr({attr, Anno, Name, Expr}, Opts) ->
-	{tuple, Anno, [{atom, Anno, Name}, compile_expr(Expr, Opts)]}.
+rewrite_tags_pre(Tags, Opts) ->
+	erl_syntax:tuple([
+		erl_syntax:atom(pre_html),
+		list_unless_singleton(compact(flatten([rewrite_tag_pre(Tag, Opts) || Tag <- Tags])))
+	]).
 
-%% pre
+rewrite_tag_pre({tag, _Anno, Name, Attrs, []}, Opts) ->
+	erl_syntax:list(
+		[binary_from_string("<" ++ atom_to_list(Name), Opts)] ++
+		[rewrite_attr_pre(Attr, Opts) || Attr <- Attrs] ++
+		[binary_from_string(html_end_tag(Name), Opts)]
+	);
+rewrite_tag_pre({tag, _Anno, Name, Attrs, Body}, Opts) ->
+	erl_syntax:list(
+		[binary_from_string("<" ++ atom_to_list(Name), Opts)] ++
+		[rewrite_attr_pre(Attr, Opts) || Attr <- Attrs] ++
+		[binary_from_string(">", Opts)] ++
+		[rewrite_body_expr_pre(Expr, Opts) || Expr <- Body] ++ 
+		[binary_from_string("</" ++ atom_to_list(Name) ++ ">", Opts)]
+	).
 
-compile_tags_pre({tags, Anno, Tags}, Opts) ->
-	{tuple, Anno, [
-		{atom, Anno, pre_html},
-		compress(flatten(abstract_list([compile_tag_pre(T, Opts) || T <- Tags], Anno)))
-	]}.
+rewrite_attr_pre({min_attr, _Anno, Name}, Opts) ->
+	binary_from_string(" " ++ atom_to_list(Name), Opts);
+rewrite_attr_pre({attr, _Anno, Name, Expr}, Opts) ->
+	erl_syntax:list([
+		binary_from_string(" " ++ atom_to_list(Name) ++ "=\"", Opts),
+		rewrite_attr_expr_pre(Expr, Opts),
+		binary_from_string("\"", Opts)
+	]).
 
-compile_tag_pre({tag, Anno, Name, Attrs, []}, Opts) ->
-	abstract_list(
-		[list_to_abstract_binary("<" ++ atom_to_list(Name), Anno)] ++
-		[compile_attr_pre(Attr, Opts) || Attr <- Attrs] ++
-		[list_to_abstract_binary(html_end_tag(Name), Anno)]
-	, Anno);
-compile_tag_pre({tag, Anno, Name, Attrs, BodyExprs}, Opts) ->
-	abstract_list(
-		[list_to_abstract_binary("<" ++ atom_to_list(Name), Anno)] ++
-		[compile_attr_pre(Attr, Opts) || Attr <- Attrs] ++
-		[list_to_abstract_binary(">", Anno)] ++
-		[compile_body_expr_pre(Expr, Opts) || Expr <- BodyExprs] ++
-		[list_to_abstract_binary("</" ++ atom_to_list(Name) ++ ">", Anno)]
-	, Anno).
-
-compile_attr_pre({min_attr, Anno, Name}, _Opts) ->
-	list_to_abstract_binary(" " ++ atom_to_list(Name), Anno);
-compile_attr_pre({attr, Anno, Name, Expr}, Opts) ->
-	abstract_list([
-		list_to_abstract_binary(" " ++ atom_to_list(Name) ++ "=\"", Anno),
-		compile_attr_expr_pre(Expr, Opts),
-		list_to_abstract_binary("\"", Anno)
-	], Anno).
-
-compile_attr_expr_pre(Expr, Opts) ->
-	case compile_expr(Expr, Opts) of
-		{string, Anno, Str} ->
-			erl_parse:abstract(hterl_api:htmlize(Str), Anno);
-		{char, Anno, Ch} ->
-			erl_parse:abstract(integer_to_list(Ch), Anno);
-		{integer, Anno, Int} ->
-			erl_parse:abstract(integer_to_list(Int), Anno);
-		{bin, Anno, _} = BinAbs ->
-			try
-				Bin = erl_parse:normalise(BinAbs),
-				erl_parse:abstract(hterl_api:htmlize(Bin), Anno)
-			catch
-				_:_ ->
-					interpolate_attr(BinAbs)
+rewrite_body_expr_pre(SourceExpr, Opts) ->
+	Expr = rewrite(SourceExpr, Opts),
+	case erl_syntax:type(Expr) of
+		string ->
+			erl_syntax:string(hterl_api:htmlize(erl_syntax:string_value(Expr)));
+		char ->
+			erl_syntax:string(hterl_api:htmlize([erl_syntax:char_value(Expr)]));
+		integer ->
+			case erl_syntax:integer_value(Expr) of
+				Ch when Ch >= 0 andalso Ch =< 255 ->
+					erl_syntax:string(hterl_api:htmlize([Ch]));
+				_ ->
+					apply_interpolate(Expr)
 			end;
-		CompiledExpr ->
-			interpolate_attr(CompiledExpr)
-	end.
-
-compile_body_expr_pre(Expr, Opts) ->
-	case compile_expr(Expr, Opts) of
-		{string, Anno, Str} ->
-			erl_parse:abstract(hterl_api:htmlize(Str), Anno);
-		{char, Anno, Ch} ->
-			erl_parse:abstract(hterl_api:htmlize_char(Ch), Anno);
-		{integer, Anno, Ch} when Ch >= 0 andalso Ch =< 255 ->
-			erl_parse:abstract(hterl_api:htmlize_char(Ch), Anno);
-		{bin, Anno, _} = BinAbs ->
-			try
-				Bin = erl_parse:normalise(BinAbs),
-				erl_parse:abstract(hterl_api:htmlize(Bin), Anno)
-			catch
-				_:_ ->
-					interpolate(BinAbs)
+		nil ->
+			erl_syntax:nil();
+		list ->
+			Elems = erl_syntax:list_elements(Expr),
+			erl_syntax:list([rewrite_body_expr_pre(E, Opts) || E <- Elems]);
+		binary ->
+			case erl_syntax:is_literal(Expr) of
+				true ->
+					erl_syntax:abstract(hterl_api:htmlize(erl_syntax:concrete(Expr)));
+				false ->
+					apply_interpolate(Expr)
 			end;
-		{cons, Anno, H, T} ->
-			{cons, Anno, compile_body_expr_pre(H, Opts), compile_body_expr_pre(T, Opts)};
-		{nil, _} = Nil ->
-			Nil;
-		{lc, Anno, E, LcExprs} ->
-			{lc, Anno, compile_body_expr_pre(E, Opts), LcExprs};
-		{tuple, _, [{atom, _, pre_html}, T]} ->
-			T;
-		CompiledExpr ->
-			interpolate(CompiledExpr)
+		tuple ->
+			case erl_syntax:tuple_elements(Expr) of
+				[First, Second] ->
+					case erl_syntax:is_atom(First, pre_html) of
+						true -> Second;
+						false -> apply_interpolate(Expr)
+					end;
+				_ ->
+					apply_interpolate(Expr)
+			end;
+		list_comp ->
+			erl_syntax:list_comp(
+				rewrite_body_expr_pre(erl_syntax:list_comp_template(Expr), Opts),
+				erl_syntax:list_comp_body(Expr)
+			);
+		_ ->
+			apply_interpolate(Expr)
 	end.
 
-interpolate(Expr) ->
-	{call, 0, {remote, 0, {atom, 0, hterl_api}, {atom, 0, interpolate}}, [Expr]}.
-
-interpolate_attr(Expr) ->
-    {call, 0, {remote, 0, {atom, 0, hterl_api}, {atom, 0, interpolate_attr}}, [Expr]}.
-
-compress(List) ->
-	case compress([], List) of
-		[Single] -> Single;
-		Compressed -> abstract_list(Compressed, 0)
+rewrite_attr_expr_pre(SourceExpr, Opts) ->
+	Expr = rewrite(SourceExpr, Opts),
+	case erl_syntax:type(Expr) of
+		string ->
+			erl_syntax:string(hterl_api:htmlize(erl_syntax:string_value(Expr)));
+		char ->
+			erl_syntax:string(integer_to_list(erl_syntax:char_value(Expr)));
+		integer ->
+			erl_syntax:string(integer_to_list(erl_syntax:integer_value(Expr)));
+		binary ->
+			case erl_syntax:is_literal(Expr) of
+				true ->
+					erl_syntax:abstract(hterl_api:htmlize(erl_syntax:concrete(Expr)));
+				false ->
+					apply_interpolate_attr(Expr)
+			end;
+		_ -> apply_interpolate_attr(Expr)
 	end.
 
+apply_interpolate_attr(Argument) ->
+	erl_syntax:application(
+		erl_syntax:atom(hterl_api),
+		erl_syntax:atom(interpolate_attr),
+		[Argument]).
 
-compress(DataPrefix, {nil, _}) ->
-	[pretty_abstract_binary(iolist_to_binary(DataPrefix))];
-compress(DataPrefix, {cons, _, H, T}) ->
-	case extract_data(H) of
-		error ->
-			Bin = pretty_abstract_binary(iolist_to_binary(DataPrefix)),
-			[Bin, H | compress([], T)];
-		Data ->
-			compress([DataPrefix|Data], T)
-	end.
+apply_interpolate(Argument) ->
+	erl_syntax:application(
+		erl_syntax:atom(hterl_api),
+		erl_syntax:atom(interpolate),
+		[Argument]).
 
-extract_data({char, _, Ch}) -> <<Ch>>;
-extract_data({integer, _, Int}) -> <<Int>>;
-extract_data({string, _, Ch}) -> Ch;
-extract_data({bin, _, _} = BinAbs) ->
-	% Must be normalisable, otherwise it would be wrapped in a call to interpolate.
-	erl_parse:normalise(BinAbs);
-extract_data(_) -> error.
+list_unless_singleton([Single]) -> Single;
+list_unless_singleton(List) -> erl_syntax:list(List).
 
-
-pretty_abstract_binary(Bin) ->
-	list_to_abstract_binary(binary_to_list(Bin), 0).
-
+binary_from_string(String, _Opts) ->
+	% The right thing to do would be to use erl_syntax:string
+	% but erl_syntax:concrete has a bug that prevents that.
+	erl_syntax:binary([erl_syntax:binary_field({string, 0, String})]).
 
 flatten(List) ->
-	flatten_append(List, {nil, 0}).
+	flatten_append(List, []).
 
-flatten_append({cons, _Anno, {nil, _}, T}, Tail) ->
-	flatten_append(T, Tail);
-flatten_append({cons, _Anno, {cons, _, _, _} = H, T}, Tail) ->
-	flatten_append(H, flatten_append(T, Tail));
-flatten_append({cons, Anno, H, T}, Tail) ->
-	{cons, Anno, H, flatten_append(T, Tail)};
-flatten_append({nil, _}, Tail) ->
+flatten_append([], Tail) ->
 	Tail;
-flatten_append(X, Tail) ->
-	{cons, 0, X, Tail}.
+flatten_append([H|T], Tail) ->
+	case erl_syntax:is_list_skeleton(H) of
+		true ->
+			flatten_append(erl_syntax:list_elements(H), flatten_append(T, Tail));
+		false ->
+			[H] ++ flatten_append(T, Tail)
+	end.
 
-list_to_abstract_binary(Str, Anno) when is_list(Str) ->
-	{bin, Anno, [{bin_element, Anno, {string, Anno, Str}, default, default}]}.
 
+compact(List) ->
+	compact(List, []).
 
-abstract_list([], Anno) ->
-	{nil, Anno};
-abstract_list([X|Xs], Anno) ->
-	{cons, Anno, X, abstract_list(Xs, Anno)}.
+compact([], LiteralPrefix) ->
+	[pretty_binary(LiteralPrefix)];
+compact([H|T], LiteralPrefix) ->
+	case literal_data(H) of
+		not_literal ->
+			Bin = pretty_binary(LiteralPrefix),
+			[Bin, H | compact(T, [])];
+		Literal ->
+			compact(T, [LiteralPrefix|Literal])
+	end.
+
+pretty_binary(IoList) ->
+	Bin = iolist_to_binary(IoList),
+	binary_from_string(binary_to_list(Bin), []).
+
+literal_data(Tree) ->
+	Type = erl_syntax:type(Tree),
+	case lists:member(Type, [string, char, integer, binary]) of
+		true -> erl_syntax:concrete(Tree);
+		false -> not_literal
+	end.
 
 location(none) -> none;
 location(Anno) ->
@@ -407,4 +357,3 @@ html_end_tag(source) -> ?self_closing;
 html_end_tag(track) -> ?self_closing;
 html_end_tag(wbr) -> ?self_closing;
 html_end_tag(Tag) -> "></" ++ atom_to_list(Tag) ++ ">".
-
