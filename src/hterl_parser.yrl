@@ -1,3 +1,7 @@
+%% PROMINENT NOTICE:
+%% This file is a modified version of the file erl_parse.yrl in the
+%% lib/stdlib/src directory of the Erlang/OTP distribution.
+
 %% -*- erlang -*-
 %%
 %% %CopyrightBegin%
