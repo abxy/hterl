@@ -84,6 +84,7 @@ tag_start_attrs -> tag_start tag_attrs : {tag, ?anno('$1'), element(3, '$1'), '$
 self_closing_tag -> tag_start_attrs '/>'  : '$1'.
 tag_open -> tag_start_attrs '>' : '$1'.
 tag_close -> '</' atom '>' : element(3, '$2').
+tag_close -> '</' 'div' '>' : 'div'.
 
 tag -> self_closing_tag : '$1'.
 tag -> tag_open tag_close : build_tag('$1', '$2', []).

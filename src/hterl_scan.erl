@@ -37,6 +37,8 @@ lex([]) ->
     [];
 lex([{'<', Line}, {'/', Line} | Tokens]) ->
     [{'</', Line} | lex(Tokens)];
+lex([{'<', Line}, {'div', _} | Tokens]) ->
+    [{tag_start, Line, 'div'} | lex(Tokens)];
 lex([{'<', Line}, {atom, Line, Symbol} | Tokens]) ->
     [{tag_start, Line, Symbol} | lex(Tokens)];
 lex([{'/', Line}, {'>', Line} | Tokens]) ->
