@@ -54,6 +54,10 @@ infile(St0) ->
         {error, Reason} ->
             add_error(InFile, none, {file_error, Reason}, St0)
     end,
+    case has_errors(St) of
+        true -> file:delete(St#state.outfile), ok;
+        false -> ok
+    end,
     hterl_ret(St).
 
 
@@ -69,13 +73,13 @@ strip_extension(File, Ext) ->
 
 hterl_ret(St) ->
     report_errors(St),
-    Errors = St#state.errors,
-    case Errors of
-        [] ->
-            ok;
-        _ ->
-            error
+    case has_errors(St) of
+        false -> ok;
+        true -> error
     end.
+
+has_errors(#state{errors = []}) -> false;
+has_errors(_) -> true.
 
 
 passes(St) ->
@@ -103,19 +107,23 @@ report_error({File, {Line, Mod, E}}) ->
 
 
 parse(St0) ->
-    St = parse(St0#state.inport, 1, St0),
+    St = parse_next(St0#state.inport, 1, St0),
     St#state{forms = lists:reverse(St#state.forms)}.
 
-parse(Inport, Line, St) ->
+parse_next(Inport, Line, St0) ->
     {NextLine, Form} = read_form(Inport, Line),
-    parse(Form, Inport, NextLine, St).
+    case parse(Form, St0) of
+        {eof, St} -> St;
+        St -> parse_next(Inport, NextLine, St)
+    end.
 
 
-parse(eof, _Inport, _NextLine, St) ->
-    St;
-parse(Form, Inport, NextLine, St0) ->
-    St = St0#state{forms = [Form | St0#state.forms]},
-    parse(Inport, NextLine, St).
+parse(eof, St) ->
+    {eof, St};
+parse({error, ErrorLine, Error}, St0) ->
+    add_error(erl_anno:new(ErrorLine), Error, St0);
+parse(Form, St0) ->
+    St0#state{forms = [Form | St0#state.forms]}.
 
 
 read_form(Inport, Line) ->
@@ -323,11 +331,17 @@ location(none) -> none;
 location(Anno) ->
     erl_anno:line(Anno).
 
+add_error(Anno, E, St) ->
+    add_error(St#state.infile, Anno, E, St).
+
 add_error(File, Anno, E, St) ->
     Loc = location(Anno),
     St#state{errors = [{File, {Loc,?MODULE,E}}|St#state.errors]}.
 
-
+format_error({error, ?MODULE, Error}) when is_list(Error) ->
+    Error;
+format_error({error, Module, Error}) ->
+    Module:format_error(Error);
 format_error({file_error, Reason}) ->
     io_lib:fwrite("~ts",[file:format_error(Reason)]).
 
