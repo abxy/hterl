@@ -9,6 +9,7 @@
 
 -record(state, {
     infile,
+    encoding,
     inport,
     outfile,
     forms = [],
@@ -46,7 +47,8 @@ infile(St0) ->
     St = case file:open(InFile, [read, read_ahead]) of
         {ok, Inport} ->
             try
-                St1 = St0#state{inport = Inport},
+                Encoding = select_encoding(Inport),
+                St1 = St0#state{inport = Inport, encoding = Encoding},
                 passes(St1)
             after
                 ok = file:close(Inport)
@@ -60,6 +62,14 @@ infile(St0) ->
     end,
     hterl_ret(St).
 
+select_encoding(Inport) ->
+    % Set port encoding, defaulting to utf8 (epp's default)
+    % unless overridden by a directive in the file.
+    EncodingOverride = epp:set_encoding(Inport),
+    case EncodingOverride of
+        none -> epp:default_encoding();
+        Encoding -> Encoding
+    end.
 
 assure_extension(File, Ext) ->
     lists:concat([strip_extension(File, Ext), Ext]).
@@ -92,9 +102,25 @@ transform(St) ->
 
 output(St) ->
     #state{forms=Forms, outfile=OutFile} = St,
-    file:write_file(OutFile, string:join([erl_pp:form(Form) || Form <- Forms], "\n")),
-    St.
+    case file:open(OutFile, [write, delayed_write]) of
+        {ok, OutPort} ->
+            try
+                set_encoding(OutPort, St#state.encoding),
+                [write_form(OutPort, Form) || Form <- Forms],
+                St
+            after
+                file:close(OutPort)
+            end;
+        {error, Reason} ->
+            add_error(OutFile, none, {file_error, Reason}, St)
+    end.
 
+write_form(Port, Form) ->
+    PP = erl_pp:form(Form),
+    ok = file:write(Port, [PP, $\n]).
+
+set_encoding(Port, Encoding) ->
+    ok = io:setopts(Port, [{encoding, Encoding}]).
 
 report_errors(St) ->
     lists:foreach(fun report_error/1, lists:sort(St#state.errors)).
