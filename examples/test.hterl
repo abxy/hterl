@@ -2,6 +2,6 @@
 -export([unordered_list/1]).
 
 unordered_list(Xs) ->
-	<ul>
-		[ <li> X </li> || X <- Xs ]
-	</ul>.
+    <ul>
+        [ <li> X </li> || X <- Xs ]
+    </ul>.
