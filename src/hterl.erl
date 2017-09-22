@@ -317,7 +317,8 @@ compact([], Fields, Elements) ->
 compact([H|T], Fields, Elements) ->
     case erl_syntax:type(H) of
         string ->
-            compact(T, [erl_syntax:binary_field(H) | Fields], Elements);
+            {String, T1} = compact_strings([H|T]),
+            compact(T1, [erl_syntax:binary_field(String) | Fields], Elements);
         binary ->
             compact(T, lists:reverse(erl_syntax:binary_fields(H), Fields), Elements);
         _ ->
@@ -326,32 +327,22 @@ compact([H|T], Fields, Elements) ->
 
 compact_fields([], Elements) ->
     Elements;
-compact_fields([H|T], Elements) ->
-    Body = erl_syntax:binary_field_body(H),
-    Types = erl_syntax:binary_field_types(H),
-    case erl_syntax:type(Body) of
+compact_fields(Fields, Elements) ->
+    [erl_syntax:binary(lists:reverse(Fields)) | Elements].
+
+compact_strings(List) ->
+    {StringValue, Tail} = compact_strings(List, ""),
+    {erl_syntax:string(lists:reverse(StringValue)), Tail}.
+
+compact_strings([], StringValue) ->
+    {StringValue, []};
+compact_strings([H|T], StringValue) ->
+    case erl_syntax:type(H) of
         string ->
-            String = erl_syntax:string_value(Body),
-            compact_fields(T, String, Types, Elements);
+            compact_strings(T, lists:reverse(erl_syntax:string_value(H), StringValue));
         _ ->
-            compact_fields(T, [erl_syntax:binary([H]) | Elements])
+            {StringValue, [H|T]}
     end.
-
-compact_fields([], String, Types, Elements) ->
-    [string_binary(String, Types) | Elements];
-compact_fields([H|T], String, Types, Elements) ->
-    Body = erl_syntax:binary_field_body(H),
-    case {erl_syntax:type(Body), erl_syntax:binary_field_types(H)} of
-        {string, Types} ->
-            String1 = erl_syntax:string_value(Body) ++ String,
-            compact_fields(T, String1, Types, Elements);
-        _ ->
-            Elements1 = [string_binary(String, Types) | Elements],
-            compact_fields([H|T], Elements1)
-    end.
-
-string_binary(String, Types) ->
-    erl_syntax:binary([erl_syntax:binary_field(erl_syntax:string(String), Types)]).
 
 location(none) -> none;
 location(Anno) ->
