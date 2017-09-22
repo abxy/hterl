@@ -208,26 +208,26 @@ rewrite_tags_pre(Tags, Opts) ->
 
 rewrite_tag_pre({tag, _Anno, Name, Attrs, []}, Opts) ->
     erl_syntax:list(
-        [binary_from_string("<" ++ atom_to_list(Name), Opts)] ++
+        [erl_syntax:string("<" ++ atom_to_list(Name))] ++
         [rewrite_attr_pre(Attr, Opts) || Attr <- Attrs] ++
-        [binary_from_string(html_end_tag(Name), Opts)]
+        [erl_syntax:string(html_end_tag(Name))]
     );
 rewrite_tag_pre({tag, _Anno, Name, Attrs, Body}, Opts) ->
     erl_syntax:list(
-        [binary_from_string("<" ++ atom_to_list(Name), Opts)] ++
+        [erl_syntax:string("<" ++ atom_to_list(Name))] ++
         [rewrite_attr_pre(Attr, Opts) || Attr <- Attrs] ++
-        [binary_from_string(">", Opts)] ++
+        [erl_syntax:string(">")] ++
         [rewrite_body_expr_pre(Expr, Opts) || Expr <- Body] ++
-        [binary_from_string("</" ++ atom_to_list(Name) ++ ">", Opts)]
+        [erl_syntax:string("</" ++ atom_to_list(Name) ++ ">")]
     ).
 
-rewrite_attr_pre({min_attr, _Anno, Name}, Opts) ->
-    binary_from_string(" " ++ atom_to_list(Name), Opts);
+rewrite_attr_pre({min_attr, _Anno, Name}, _Opts) ->
+    erl_syntax:string(" " ++ atom_to_list(Name));
 rewrite_attr_pre({attr, _Anno, Name, Expr}, Opts) ->
     erl_syntax:list([
-        binary_from_string(" " ++ atom_to_list(Name) ++ "=\"", Opts),
+        erl_syntax:string(" " ++ atom_to_list(Name) ++ "=\""),
         rewrite_attr_expr_pre(Expr, Opts),
-        binary_from_string("\"", Opts)
+        erl_syntax:string("\"")
     ]).
 
 rewrite_body_expr_pre(SourceExpr, Opts) ->
