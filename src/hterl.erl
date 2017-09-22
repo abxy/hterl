@@ -236,11 +236,11 @@ rewrite_body_expr_pre(SourceExpr, Opts) ->
     Expr = rewrite(SourceExpr, Opts),
     case erl_syntax:type(Expr) of
         string ->
-            erl_syntax:string(hterl_api:htmlize(erl_syntax:string_value(Expr)));
+            erl_syntax:string(sanitize(erl_syntax:string_value(Expr), Opts));
         char ->
-            erl_syntax:string(hterl_api:htmlize([erl_syntax:char_value(Expr)]));
+            erl_syntax:string(sanitize([erl_syntax:char_value(Expr)], Opts));
         integer ->
-            erl_syntax:string(hterl_api:htmlize([erl_syntax:integer_value(Expr)]));
+            erl_syntax:string(sanitize([erl_syntax:integer_value(Expr)], Opts));
         nil ->
             erl_syntax:nil();
         list ->
@@ -269,12 +269,22 @@ rewrite_attr_expr_pre(SourceExpr, Opts) ->
     Expr = rewrite(SourceExpr, Opts),
     case erl_syntax:type(Expr) of
         string ->
-            erl_syntax:string(hterl_api:htmlize(erl_syntax:string_value(Expr)));
+            erl_syntax:string(sanitize(erl_syntax:string_value(Expr), Opts));
         char ->
             erl_syntax:string(integer_to_list(erl_syntax:char_value(Expr)));
         integer ->
             erl_syntax:string(integer_to_list(erl_syntax:integer_value(Expr)));
         _ -> apply_interpolate_attr(Expr, Opts)
+    end.
+
+sanitize(String, Opts) ->
+    Encoding = get_option(encoding, Opts),
+    case unicode:characters_to_list(String, Encoding) of
+        {error, _, _} ->
+            % TODO: Generate proper error (requires passing State instead of Opts)
+            exit({invalid_character, Encoding});
+        ValidString ->
+            hterl_api:htmlize(ValidString)
     end.
 
 apply_interpolate_attr(Value, Opts) ->
