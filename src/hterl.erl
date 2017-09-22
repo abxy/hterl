@@ -203,7 +203,7 @@ rewrite_attr_ehtml({attr, _Anno, Name, Expr}, Opts) ->
 rewrite_tags_pre(Tags, Opts) ->
     erl_syntax:tuple([
         erl_syntax:atom(pre_html),
-        list_unless_singleton(compact(flatten([rewrite_tag_pre(Tag, Opts) || Tag <- Tags])))
+        compact(flatten([rewrite_tag_pre(Tag, Opts) || Tag <- Tags]))
     ]).
 
 rewrite_tag_pre({tag, _Anno, Name, Attrs, []}, Opts) ->
@@ -309,11 +309,6 @@ apply_interpolate(Argument) ->
 list_unless_singleton([Single]) -> Single;
 list_unless_singleton(List) -> erl_syntax:list(List).
 
-binary_from_string(String, _Opts) ->
-    % The right thing to do would be to use erl_syntax:string
-    % but erl_syntax:concrete has a bug that prevents that.
-    erl_syntax:binary([erl_syntax:binary_field({string, 0, String})]).
-
 flatten(List) ->
     flatten_append(List, []).
 
@@ -327,31 +322,26 @@ flatten_append([H|T], Tail) ->
             [H] ++ flatten_append(T, Tail)
     end.
 
-
 compact(List) ->
-    compact(List, []).
+    Elements = compact(List, [], []),
+    list_unless_singleton(lists:reverse(Elements)).
 
-compact([], LiteralPrefix) ->
-    [pretty_binary(LiteralPrefix)];
-compact([H|T], LiteralPrefix) ->
-    case literal_data(H) of
-        not_literal ->
-            Bin = pretty_binary(LiteralPrefix),
-            [Bin, H | compact(T, [])];
-        Literal ->
-            compact(T, [LiteralPrefix|Literal])
+compact([], Fields, Elements) ->
+    compact_fields(Fields, Elements);
+compact([H|T], Fields, Elements) ->
+    case erl_syntax:type(H) of
+        string ->
+            compact(T, [erl_syntax:binary_field(H) | Fields], Elements);
+        binary ->
+            compact(T, lists:reverse(erl_syntax:binary_fields(H), Fields), Elements);
+        _ ->
+            compact(T, [], [H | compact_fields(Fields, Elements)])
     end.
 
-pretty_binary(IoList) ->
-    Bin = iolist_to_binary(IoList),
-    binary_from_string(binary_to_list(Bin), []).
-
-literal_data(Tree) ->
-    Type = erl_syntax:type(Tree),
-    case lists:member(Type, [string, char, integer, binary]) of
-        true -> erl_syntax:concrete(Tree);
-        false -> not_literal
-    end.
+compact_fields([], Elements) ->
+    Elements;
+compact_fields(Fields, Elements) ->
+    [erl_syntax:binary(lists:reverse(Fields)) | Elements].
 
 location(none) -> none;
 location(Anno) ->
