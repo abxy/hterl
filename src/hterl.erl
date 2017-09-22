@@ -249,13 +249,6 @@ rewrite_body_expr_pre(SourceExpr, Opts) ->
         list ->
             Elems = erl_syntax:list_elements(Expr),
             erl_syntax:list([rewrite_body_expr_pre(E, Opts) || E <- Elems]);
-        binary ->
-            case erl_syntax:is_literal(Expr) of
-                true ->
-                    erl_syntax:abstract(hterl_api:htmlize(erl_syntax:concrete(Expr)));
-                false ->
-                    apply_interpolate(Expr)
-            end;
         tuple ->
             case erl_syntax:tuple_elements(Expr) of
                 [First, Second] ->
@@ -284,13 +277,6 @@ rewrite_attr_expr_pre(SourceExpr, Opts) ->
             erl_syntax:string(integer_to_list(erl_syntax:char_value(Expr)));
         integer ->
             erl_syntax:string(integer_to_list(erl_syntax:integer_value(Expr)));
-        binary ->
-            case erl_syntax:is_literal(Expr) of
-                true ->
-                    erl_syntax:abstract(hterl_api:htmlize(erl_syntax:concrete(Expr)));
-                false ->
-                    apply_interpolate_attr(Expr)
-            end;
         _ -> apply_interpolate_attr(Expr)
     end.
 
