@@ -326,8 +326,32 @@ compact([H|T], Fields, Elements) ->
 
 compact_fields([], Elements) ->
     Elements;
-compact_fields(Fields, Elements) ->
-    [erl_syntax:binary(lists:reverse(Fields)) | Elements].
+compact_fields([H|T], Elements) ->
+    Body = erl_syntax:binary_field_body(H),
+    Types = erl_syntax:binary_field_types(H),
+    case erl_syntax:type(Body) of
+        string ->
+            String = erl_syntax:string_value(Body),
+            compact_fields(T, String, Types, Elements);
+        _ ->
+            compact_fields(T, [erl_syntax:binary([H]) | Elements])
+    end.
+
+compact_fields([], String, Types, Elements) ->
+    [string_binary(String, Types) | Elements];
+compact_fields([H|T], String, Types, Elements) ->
+    Body = erl_syntax:binary_field_body(H),
+    case {erl_syntax:type(Body), erl_syntax:binary_field_types(H)} of
+        {string, Types} ->
+            String1 = erl_syntax:string_value(Body) ++ String,
+            compact_fields(T, String1, Types, Elements);
+        _ ->
+            Elements1 = [string_binary(String, Types) | Elements],
+            compact_fields([H|T], Elements1)
+    end.
+
+string_binary(String, Types) ->
+    erl_syntax:binary([erl_syntax:binary_field(erl_syntax:string(String), Types)]).
 
 location(none) -> none;
 location(Anno) ->
