@@ -274,14 +274,15 @@ rewrite_attr_expr_pre(SourceExpr, Opts) ->
             erl_syntax:string(integer_to_list(erl_syntax:char_value(Expr)));
         integer ->
             erl_syntax:string(integer_to_list(erl_syntax:integer_value(Expr)));
-        _ -> apply_interpolate_attr(Expr)
+        _ -> apply_interpolate_attr(Expr, Opts)
     end.
 
-apply_interpolate_attr(Argument) ->
+apply_interpolate_attr(Value, Opts) ->
+    Encoding = get_option(encoding, Opts),
     erl_syntax:application(
         erl_syntax:atom(hterl_api),
         erl_syntax:atom(interpolate_attr),
-        [Argument]).
+        [Value, erl_syntax:abstract(Encoding)]).
 
 apply_interpolate(Value, Opts) ->
     Encoding = get_option(encoding, Opts),

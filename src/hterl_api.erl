@@ -1,6 +1,6 @@
 -module(hterl_api).
 -export([htmlize/1, htmlize_char/1]).
--export([interpolate/2, interpolate_attr/1]).
+-export([interpolate/2, interpolate_attr/2]).
 -export([render/1, render/3]).
 
 %% htmlize
@@ -80,14 +80,13 @@ interpolate_string([_|_] = List, Acc, Encoding) ->
     [Binary || interpolate(List, Encoding)].
 
 
-interpolate_attr(Value) ->
-    htmlize(value2string(Value)).
+interpolate_attr(Atom, Encoding) when is_atom(Atom) ->
+    interpolate_attr(atom_to_list(Atom), Encoding);
+interpolate_attr(Integer, Encoding) when is_integer(Integer) ->
+    unicode:characters_to_binary(integer_to_list(Integer), latin1, Encoding);
+interpolate_attr(String, Encoding) when is_list(String) ->
+    unicode:characters_to_binary(htmlize_l(String), Encoding, Encoding).
 
-value2string(Atom) when is_atom(Atom) -> atom_to_list(Atom);
-value2string(String) when is_list(String) -> String;
-value2string(Binary) when is_binary(Binary) -> Binary;
-value2string(Integer) when is_integer(Integer) -> integer_to_list(Integer);
-value2string(Float) when is_float(Float) -> float_to_list(Float).
 
 value2string(Atom, _InEncoding, OutEncoding) when is_atom(Atom) ->
     atom_to_binary(Atom, OutEncoding);
