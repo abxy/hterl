@@ -1,26 +1,15 @@
 -module(hterl_api).
--export([htmlize/1, htmlize_char/1]).
+-export([htmlize/1]).
 -export([interpolate/2, interpolate_attr/2]).
--export([render/1, render/3]).
+-export([render/1, render/2]).
+
+-import(unicode, [characters_to_binary/3]).
 
 %% htmlize
 htmlize(Bin) when is_binary(Bin) ->
     list_to_binary(htmlize_l(binary_to_list(Bin)));
 htmlize(List) when is_list(List) ->
     htmlize_l(List).
-
-
-htmlize_char($>) ->
-    <<"&gt;">>;
-htmlize_char($<) ->
-    <<"&lt;">>;
-htmlize_char($&) ->
-    <<"&amp;">>;
-htmlize_char($") ->
-    <<"&quot;">>;
-htmlize_char(X) ->
-    X.
-
 
 %% htmlize list (usually much more efficient than above)
 htmlize_l(List) ->
@@ -56,7 +45,9 @@ interpolate([], _Encoding) -> [];
 interpolate({pre_html, X}, _Encoding) -> X;
 interpolate(Bin, Encoding) when is_binary(Bin) ->
     Decoded = unicode:characters_to_list(Bin, Encoding),
-    unicode:characters_to_binary(htmlize_l(Decoded), Encoding, Encoding).
+    characters_to_binary(htmlize_l(Decoded), Encoding, Encoding);
+interpolate(Tuple, Encoding) when is_tuple(Tuple) ->
+    render(Tuple, Encoding).
 
 interpolate_string(List, Encoding) ->
     interpolate_string(List, [], Encoding).
@@ -73,68 +64,55 @@ interpolate_string([X|Tail], Acc, Encoding) when is_integer(X) ->
     interpolate_string(Tail, [X|Acc], Encoding);
 interpolate_string([], Acc, Encoding) ->
     String = lists:reverse(Acc),
-    unicode:characters_to_binary(String, Encoding, Encoding);
+    characters_to_binary(String, Encoding, Encoding);
 interpolate_string([_|_] = List, Acc, Encoding) ->
     String = lists:reverse(Acc),
-    Binary = unicode:characters_to_binary(String, Encoding, Encoding),
+    Binary = characters_to_binary(String, Encoding, Encoding),
     [Binary || interpolate(List, Encoding)].
 
 
 interpolate_attr(Atom, Encoding) when is_atom(Atom) ->
     interpolate_attr(atom_to_list(Atom), Encoding);
 interpolate_attr(Integer, Encoding) when is_integer(Integer) ->
-    unicode:characters_to_binary(integer_to_list(Integer), latin1, Encoding);
+    characters_to_binary(integer_to_list(Integer), latin1, Encoding);
 interpolate_attr(String, Encoding) when is_list(String) ->
-    unicode:characters_to_binary(htmlize_l(String), Encoding, Encoding).
-
-
-value2string(Atom, _InEncoding, OutEncoding) when is_atom(Atom) ->
-    atom_to_binary(Atom, OutEncoding);
-value2string(String, InEncoding, OutEncoding) when is_list(String) ->
-    unicode:characters_to_binary(String, InEncoding, OutEncoding);
-value2string(Binary, _InEncoding, _OutEncoding) when is_binary(Binary) ->
-    Binary;
-value2string(Integer, _InEncoding, _OutEncoding) when is_integer(Integer) ->
-    integer_to_list(Integer);
-value2string(Float, _InEncoding, _OutEncoding) when is_float(Float) ->
-    float_to_list(Float).
+    characters_to_binary(htmlize_l(String), Encoding, Encoding).
 
 %% render
 
 render(Element) ->
-    render(Element, unicode, unicode).
+    render(Element, unicode).
 
+render({Tag}, Encoding) ->
+    characters_to_binary([$<, atom_to_list(Tag) | html_end_tag(Tag)], Encoding, Encoding);
+render({pre_html, X}, _Encoding) -> X;
+render({Tag, Attrs}, Encoding) ->
+    [
+        characters_to_binary([$< | atom_to_list(Tag)], Encoding, Encoding),
+        render_attrs(Attrs, Encoding),
+        characters_to_binary(html_end_tag(Tag), Encoding, Encoding)
+    ];
+render({Tag, Attrs, Body}, Encoding) ->
+    TagStr = atom_to_list(Tag),
+    [
+        characters_to_binary([$< | TagStr], Encoding, Encoding),
+        render_attrs(Attrs, Encoding),
+        characters_to_binary(">", Encoding, Encoding),
+        render(Body, Encoding),
+        characters_to_binary([$<, $/, TagStr, $>], Encoding, Encoding)
+    ];
+render(X, Encoding) when not is_tuple(X) ->
+    interpolate(X, Encoding).
 
-render(Ch, _InEncoding, _OutEncoding) when Ch >= 0 andalso Ch =< 127 ->
-    htmlize_char(Ch);
-render(Ch, InEncoding, OutEncoding) when Ch >= 128 andalso Ch =< 255 ->
-    unicode:characters_to_binary([Ch], InEncoding, OutEncoding);
-render(Bin, _InEncoding, _OutEncoding) when is_binary(Bin) ->
-    htmlize(Bin);
-render({pre_html, String}, _InEncoding, _OutEncoding) ->
-    String;
-render({Tag}, _InEncoding, OutEncoding) ->
-    [$<, atom_to_binary(Tag, OutEncoding) | html_end_tag(Tag)];
-render({Tag, Attrs}, InEncoding, OutEncoding) ->
-    TagString = atom_to_binary(Tag, OutEncoding),
-    AttrsString = render_attrs(Attrs, InEncoding, OutEncoding),
-    [$<, TagString, AttrsString | html_end_tag(Tag)];
-render({Tag, Attrs, Body}, InEncoding, OutEncoding) ->
-    TagString = atom_to_binary(Tag, OutEncoding),
-    AttrsString = render_attrs(Attrs, InEncoding, OutEncoding),
-    BodyString = render(Body, InEncoding, OutEncoding),
-    [$<, TagString, AttrsString, $>, BodyString, $<, $/, TagString, $>];
-render([], _InEncoding, _OutEncoding) ->
-    [];
-render([H|T], InEncoding, OutEncoding) ->
-    [render(H, InEncoding, OutEncoding) | render(T, InEncoding, OutEncoding)].
-
-render_attrs([], _InEnc, _OutEnc) -> [];
-render_attrs([Attr|Tail], InEnc, OutEnc) when is_atom(Attr) ->
-    [($ ), atom_to_binary(Attr, OutEnc) | render_attrs(Tail, InEnc, OutEnc)];
-render_attrs([{Name, Value}|Tail], InEnc, OutEnc) when is_atom(Name) ->
-    ValueStr = htmlize(value2string(Value, InEnc, OutEnc)),
-    [($ ), atom_to_binary(Name, OutEnc), $=, $", ValueStr, $" | render_attrs(Tail, InEnc, OutEnc)].
+render_attrs([], _Encoding) -> [];
+render_attrs([Name|Attrs], Encoding) when is_atom(Name) ->
+    Rendered = characters_to_binary([($ )|atom_to_list(Name)], Encoding, Encoding), 
+    [Rendered | render_attrs(Attrs, Encoding)];
+render_attrs([{Name, Value}|Attrs], Encoding) ->
+    Pre = characters_to_binary([($ ), atom_to_list(Name), $=, $"], Encoding, Encoding),
+    Post = characters_to_binary("\"", Encoding, Encoding),
+    RenderedValue = interpolate_attr(Value, Encoding),
+    [Pre, RenderedValue, Post | render_attrs(Attrs, Encoding)].
 
 %% Void elements must not have an end tag (</tag>) in HTML5, while for most
 %% elements a proper end tag (<tag></tag>, not <tag />) is mandatory.
