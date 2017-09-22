@@ -1,6 +1,6 @@
 -module(hterl_api).
 -export([htmlize/1, htmlize_char/1]).
--export([interpolate/1, interpolate_attr/1]).
+-export([interpolate/2, interpolate_attr/1]).
 -export([render/1, render/3]).
 
 %% htmlize
@@ -34,7 +34,7 @@ htmlize_l([$<|Tail], Acc) ->
 htmlize_l([$&|Tail], Acc) ->
     htmlize_l(Tail, [$;,$p,$m,$a,$&|Acc]);
 htmlize_l([$"|Tail], Acc) ->
-    htmlize_l(Tail, [$; , $t, $o,  $u,  $q  ,$&|Acc]);
+    htmlize_l(Tail, [$;,$t,$o,$u,$q,$&|Acc]);
 
 htmlize_l([X|Tail], Acc) when is_integer(X) ->
     htmlize_l(Tail, [X|Acc]);
@@ -46,11 +46,39 @@ htmlize_l([X|Tail], Ack) when is_list(X) ->
 htmlize_l(Tail, [X2|Ack]).
 
 %% interpolate
-interpolate(Ch) when Ch >= 0, Ch =< 255 -> hterl_api:htmlize_char(Ch);
-interpolate(Bin) when is_binary(Bin) -> hterl_api:htmlize(Bin);
-interpolate({pre_html, X}) -> X;
-interpolate([H|T]) -> [interpolate(H)|interpolate(T)];
-interpolate([]) -> [].
+interpolate(Ch, Encoding) when is_integer(Ch) ->
+    interpolate_string([Ch], Encoding);
+interpolate([H|_] = List, Encoding) when is_integer(H) ->
+    interpolate_string(List, Encoding);
+interpolate([H|T], Encoding) ->
+    [interpolate(H, Encoding)|interpolate(T, Encoding)];
+interpolate([], _Encoding) -> [];
+interpolate({pre_html, X}, _Encoding) -> X;
+interpolate(Bin, Encoding) when is_binary(Bin) ->
+    Decoded = unicode:characters_to_list(Bin, Encoding),
+    unicode:characters_to_binary(htmlize_l(Decoded), Encoding, Encoding).
+
+interpolate_string(List, Encoding) ->
+    interpolate_string(List, [], Encoding).
+
+interpolate_string([$>|Tail], Acc, Encoding) ->
+    interpolate_string(Tail, [$;,$t,$g,$&|Acc], Encoding);
+interpolate_string([$<|Tail], Acc, Encoding) ->
+    interpolate_string(Tail, [$;,$t,$l,$&|Acc], Encoding);
+interpolate_string([$&|Tail], Acc, Encoding) ->
+    interpolate_string(Tail, [$;,$p,$m,$a,$&|Acc], Encoding);
+interpolate_string([$"|Tail], Acc, Encoding) ->
+    interpolate_string(Tail, [$;,$t,$o,$u,$q,$&|Acc], Encoding);
+interpolate_string([X|Tail], Acc, Encoding) when is_integer(X) ->
+    interpolate_string(Tail, [X|Acc], Encoding);
+interpolate_string([], Acc, Encoding) ->
+    String = lists:reverse(Acc),
+    unicode:characters_to_binary(String, Encoding, Encoding);
+interpolate_string([_|_] = List, Acc, Encoding) ->
+    String = lists:reverse(Acc),
+    Binary = unicode:characters_to_binary(String, Encoding, Encoding),
+    [Binary || interpolate(List, Encoding)].
+
 
 interpolate_attr(Value) ->
     htmlize(value2string(Value)).

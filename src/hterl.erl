@@ -6,6 +6,7 @@
 -export([report_error/1]).
 -export([format_error/1]).
 
+-define(DEFAULT_ENCODING, latin1).
 
 -record(state, {
     infile,
@@ -201,9 +202,10 @@ rewrite_attr_ehtml({attr, _Anno, Name, Expr}, Opts) ->
     erl_syntax:tuple([erl_syntax:atom(Name), rewrite(Expr, Opts)]).
 
 rewrite_tags_pre(Tags, Opts) ->
+    Encoding = get_option(encoding, Opts),
     erl_syntax:tuple([
         erl_syntax:atom(pre_html),
-        compact(flatten([rewrite_tag_pre(Tag, Opts) || Tag <- Tags]))
+        compact(flatten([rewrite_tag_pre(Tag, Opts) || Tag <- Tags]), Encoding)
     ]).
 
 rewrite_tag_pre({tag, _Anno, Name, Attrs, []}, Opts) ->
@@ -238,12 +240,7 @@ rewrite_body_expr_pre(SourceExpr, Opts) ->
         char ->
             erl_syntax:string(hterl_api:htmlize([erl_syntax:char_value(Expr)]));
         integer ->
-            case erl_syntax:integer_value(Expr) of
-                Ch when Ch >= 0 andalso Ch =< 255 ->
-                    erl_syntax:string(hterl_api:htmlize([Ch]));
-                _ ->
-                    apply_interpolate(Expr)
-            end;
+            erl_syntax:string(hterl_api:htmlize([erl_syntax:integer_value(Expr)]));
         nil ->
             erl_syntax:nil();
         list ->
@@ -254,10 +251,10 @@ rewrite_body_expr_pre(SourceExpr, Opts) ->
                 [First, Second] ->
                     case erl_syntax:is_atom(First, pre_html) of
                         true -> Second;
-                        false -> apply_interpolate(Expr)
+                        false -> apply_interpolate(Expr, Opts)
                     end;
                 _ ->
-                    apply_interpolate(Expr)
+                    apply_interpolate(Expr, Opts)
             end;
         list_comp ->
             erl_syntax:list_comp(
@@ -265,7 +262,7 @@ rewrite_body_expr_pre(SourceExpr, Opts) ->
                 erl_syntax:list_comp_body(Expr)
             );
         _ ->
-            apply_interpolate(Expr)
+            apply_interpolate(Expr, Opts)
     end.
 
 rewrite_attr_expr_pre(SourceExpr, Opts) ->
@@ -286,11 +283,12 @@ apply_interpolate_attr(Argument) ->
         erl_syntax:atom(interpolate_attr),
         [Argument]).
 
-apply_interpolate(Argument) ->
+apply_interpolate(Value, Opts) ->
+    Encoding = get_option(encoding, Opts),
     erl_syntax:application(
         erl_syntax:atom(hterl_api),
         erl_syntax:atom(interpolate),
-        [Argument]).
+        [Value, erl_syntax:abstract(Encoding)]).
 
 list_unless_singleton([Single]) -> Single;
 list_unless_singleton(List) -> erl_syntax:list(List).
@@ -308,21 +306,21 @@ flatten_append([H|T], Tail) ->
             [H] ++ flatten_append(T, Tail)
     end.
 
-compact(List) ->
-    Elements = compact(List, [], []),
+compact(List, Encoding) ->
+    Elements = compact(List, [], [], Encoding),
     list_unless_singleton(lists:reverse(Elements)).
 
-compact([], Fields, Elements) ->
+compact([], Fields, Elements, _Encoding) ->
     compact_fields(Fields, Elements);
-compact([H|T], Fields, Elements) ->
+compact([H|T], Fields, Elements, Encoding) ->
     case erl_syntax:type(H) of
         string ->
             {String, T1} = compact_strings([H|T]),
-            compact(T1, [erl_syntax:binary_field(String) | Fields], Elements);
+            compact(T1, [string_binary_field(String, Encoding) | Fields], Elements, Encoding);
         binary ->
-            compact(T, lists:reverse(erl_syntax:binary_fields(H), Fields), Elements);
+            compact(T, lists:reverse(erl_syntax:binary_fields(H), Fields), Elements, Encoding);
         _ ->
-            compact(T, [], [H | compact_fields(Fields, Elements)])
+            compact(T, [], [H | compact_fields(Fields, Elements)], Encoding)
     end.
 
 compact_fields([], Elements) ->
@@ -331,18 +329,35 @@ compact_fields(Fields, Elements) ->
     [erl_syntax:binary(lists:reverse(Fields)) | Elements].
 
 compact_strings(List) ->
-    {StringValue, Tail} = compact_strings(List, ""),
-    {erl_syntax:string(lists:reverse(StringValue)), Tail}.
+    {String, Tail} = compact_strings(List, ""),
+    {lists:reverse(String), Tail}.
 
-compact_strings([], StringValue) ->
-    {StringValue, []};
-compact_strings([H|T], StringValue) ->
+compact_strings([], String) ->
+    {String, []};
+compact_strings([H|T], String) ->
     case erl_syntax:type(H) of
         string ->
-            compact_strings(T, lists:reverse(erl_syntax:string_value(H), StringValue));
+            compact_strings(T, lists:reverse(erl_syntax:string_value(H), String));
         _ ->
-            {StringValue, [H|T]}
+            {String, [H|T]}
     end.
+
+string_binary_field(String, Encoding) ->
+    Types = encoding_to_binary_field_types(Encoding),
+    erl_syntax:binary_field(erl_syntax:string(String), Types).
+
+encoding_to_binary_field_types(latin1) -> [];
+encoding_to_binary_field_types(unicode) ->
+    encoding_to_binary_field_types(utf8);
+encoding_to_binary_field_types(Encoding) when is_atom(Encoding) ->
+    [erl_syntax:atom(Encoding)];
+encoding_to_binary_field_types({Family, Endian}) ->
+    [erl_syntax:atom(Family), erl_syntax:atom(Endian)].
+
+
+get_option(encoding, Opts) ->
+    proplists:get_value(encoding, Opts, ?DEFAULT_ENCODING).
+
 
 location(none) -> none;
 location(Anno) ->
