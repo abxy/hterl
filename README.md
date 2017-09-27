@@ -25,7 +25,7 @@ Because HTML elements are part of the expression syntax, there is no need to swi
 
 The syntax is not HTML, only HTML-like.
 
-"HTML" elements can be written with an opening tag and a matching closing tag `<div> [...] </div>` or as a self-closing tag `<div/>` but never as an opening tag without a closing tag.
+Hterl elements can be written with an opening tag and a matching closing tag `<div> [...] </div>` or as a self-closing tag `<div/>` but never as an opening tag without a closing tag.
 The reason is that the Hterl parser is not aware of which elements are considered _empty_ according to the HTML spec.
 
 The body of an element is a comma separated list of expressions whose results are concatenated in the output.
@@ -78,11 +78,11 @@ There is no support for for HTML style comments `<!-- -->` but Erlang comments a
 ```
 erlang_comments() ->
     <p>
-        % Erlang comments may appear inside tag bodies, ...
+        % Erlang comments may appear inside element bodies, ...
         "This is a paragraph of text"
         " which continues on the next line."        
     </p>
-    % between tag bodies, ...
+    % between elements, ...
     <span
         % and even in the opening tag.
         style="background: pink;">
