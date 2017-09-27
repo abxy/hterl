@@ -6,7 +6,7 @@
 -export([report_error/1]).
 -export([format_error/1]).
 
--define(DEFAULT_ENCODING, latin1).
+-define(DEFAULT_ENCODING, utf8).
 
 -record(state, {
     infile,
