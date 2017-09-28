@@ -125,29 +125,83 @@ unordered_list(Xs) ->
 	</ul>.
 ```
 
-Compile and test.
+Compile it to Erlang code by running `hterl:file("test.hterl")`,
+producing the following output in `test.erl`.
 
 ```
-1> hterl:file("test.hterl").
-ok
-2> c("test.erl").
+-module(test).
+
+-export([unordered_list/1]).
+
+unordered_list(Xs) ->
+    {ul,
+     [],
+     [ 
+      {li,[],X} ||
+          X <- Xs
+     ]}.
+```
+
+Compile and test the module.
+
+```
+> c("test.erl").
 {ok, test}
-3> test:unordered_list(["One", "Two"]).
-{ul,[],[[{li,[],["One"]},{li,[],["Two"]}]]}
+> test:unordered_list(["One", "Two"]).
+{ul,[],[{li,[],"One"},{li,[],"Two"}]}
 ```
 
-Re-compile with option `precompile`.
+The output can be rendered as iodata using `hterl_api:render`.
 
 ```
-4> hterl:file("test.hterl", [precompile]).
+> hterl_api:render(test:unordered_list(["One", "Two"])).
+[<<"<ul">>,[],<<">">>,
+ [[<<"<li">>,[],<<">">>,<<"One">>,<<"</li>">>],
+  [<<"<li">>,[],<<">">>,<<"Two">>,<<"</li>">>]],
+ <<"</ul>">>]
+```
+
+#### Example: Pre-rendered output
+
+Re-compile the original file using option `precompile` .
+
+```
+> hterl:file("test.hterl", [precompile]).
 ok
-5> c("test.erl").
+```
+
+This produces the following the output in `test.erl`.
+
+```
+-module(test).
+
+-export([unordered_list/1]).
+
+unordered_list(Xs) ->
+    {pre_html,
+     [<<"<ul>"/utf8>>,
+      [ 
+       [<<"<li>"/utf8>>,hterl_api:interpolate(X, utf8),<<"</li>"/utf8>>] ||
+           X <- Xs
+      ],
+      <<"</ul>"/utf8>>]}.
+```
+
+Compile and test the module.
+
+```
+> c("test.erl").
 {ok, test}
-6> test:unordered_list(["One", "Two"]).
+> test:unordered_list(["One", "Two"]).
 {pre_html,[<<"<ul>">>,
-           [[<<"<li>">>,"One",<<"</li>">>],
-            [<<"<li>">>,"Two",<<"</li>">>]],
+           [[<<"<li>">>,<<"One">>,<<"</li>">>],
+            [<<"<li>">>,<<"Two">>,<<"</li>">>]],
            <<"</ul>">>]}
+> hterl_api:render(test:unordered_list(["One", "Two"])).
+[<<"<ul>">>,
+ [[<<"<li>">>,<<"One">>,<<"</li>">>],
+  [<<"<li>">>,<<"Two">>,<<"</li>">>]],
+ <<"</ul>">>]
 ```
 
 ## Build
