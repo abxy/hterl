@@ -1,6 +1,30 @@
 -module(hterl_compiler_tests).
 -include_lib("eunit/include/eunit.hrl").
 
+hterl_compiler_test_() ->
+    [
+        test_ex_testing([]),
+        test_ex_testing([precompile, {encoding, utf8}])
+    ].
+
+test_ex_testing(Options) ->
+    {setup,
+        fun () -> compile_from_examples("ex_testing", Options) end,
+        [
+            fun test_integers_in_body/0,
+            fun test_strings_in_body/0
+        ]
+    }.
+
+test_integers_in_body() ->
+    ?assertMatch(
+        <<"<p>AAA&lt;&lt;&lt;</p>"/utf8>>,
+        render_binary(ex_testing:integers_in_body(), utf8)).
+
+test_strings_in_body() ->
+    ?assertMatch(
+        <<"<p>AAA&lt;&lt;&lt;</p>"/utf8>>,
+        render_binary(ex_testing:strings_in_body(), utf8)).
 
 %-------------------------------------------------------------------------------
 % Tests
@@ -31,6 +55,9 @@ prerender_unicode_utf32_little_test() ->
 
 %-------------------------------------------------------------------------------
 % Helpers
+
+render_binary(X, Encoding) ->
+    iolist_to_binary(hterl_api:render(X, Encoding)).
 
 compile_from_examples(File, Options) ->
     compile(from_examples_dir(File), Options).
