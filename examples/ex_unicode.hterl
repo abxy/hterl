@@ -1,0 +1,5 @@
+-module(ex_unicode).
+-compile(export_all).
+
+test() ->
+    <p> "abc åäö 漢字 🔥" </p>.

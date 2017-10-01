@@ -19,3 +19,6 @@ rebar3.crashdump
 
 # yecc generated parser
 src/hterl_parser.erl
+
+# examples output
+examples/*.erl
