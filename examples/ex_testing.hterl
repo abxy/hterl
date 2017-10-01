@@ -24,3 +24,10 @@ strings_in_body() ->
         [60], % Runtime equivalent of "<"
         LessThanSign
     </p>.
+
+pre_html_in_body() ->
+    <p>
+        {pre_html, <<0, 255>>},
+        {pre_html, [0, 255]},
+        {pre_html, "\000\377"} % 377 octal = 255 decimal
+    </p>.

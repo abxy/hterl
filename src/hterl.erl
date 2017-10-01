@@ -246,16 +246,6 @@ rewrite_body_expr_pre(SourceExpr, Opts) ->
         list ->
             Elems = erl_syntax:list_elements(Expr),
             erl_syntax:list([rewrite_body_expr_pre(E, Opts) || E <- Elems]);
-        tuple ->
-            case erl_syntax:tuple_elements(Expr) of
-                [First, Second] ->
-                    case erl_syntax:is_atom(First, pre_html) of
-                        true -> Second;
-                        false -> apply_interpolate(Expr, Opts)
-                    end;
-                _ ->
-                    apply_interpolate(Expr, Opts)
-            end;
         list_comp ->
             erl_syntax:list_comp(
                 rewrite_body_expr_pre(erl_syntax:list_comp_template(Expr), Opts),
