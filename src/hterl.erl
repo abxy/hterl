@@ -18,6 +18,14 @@
     options = []
 }).
 
+-type syntaxTree() :: erl_syntax:syntaxTree().
+-type tags() :: {tags, term(), [tag()]}.
+-type tag() :: {tag, term(), atom(), [tag_attr()], [syntaxTree()]}.
+-type tag_attr() :: {attr, term(), atom(), syntaxTree()} | {min_attr, term(), atom()}.
+-type opts() :: [option()].
+-type option() :: term().
+-type state() :: #state{}.
+
 %%====================================================================
 %% API functions
 %%====================================================================
@@ -97,8 +105,8 @@ passes(St) ->
     output(transform(parse(St))).
 
 transform(St) ->
-    Opts = St#state.options,
-    St#state{forms = [erl_syntax:revert(rewrite(Form, Opts)) || Form <- St#state.forms]}.
+    {Forms, St1} = lists:mapfoldl(fun rewrite/2, St, St#state.forms),
+    St1#state{forms = lists:map(fun erl_syntax:revert/1, Forms)}.
 
 
 output(St) ->
@@ -166,116 +174,138 @@ read_form(Inport, Line) ->
             end}
     end.
 
-rewrite({tags, _Anno, Tags}, Opts) ->
-    case proplists:get_bool(precompile, Opts) of
-        true -> rewrite_tags_pre(Tags, Opts);
-        false -> rewrite_tags_ehtml(Tags, Opts)
+-spec rewrite(tags() | syntaxTree(), state()) -> {syntaxTree(), state()}.
+rewrite({tags, _Anno, Tags}, St) ->
+    case proplists:get_bool(precompile, St#state.options) of
+        true -> rewrite_tags_pre(Tags, St);
+        false -> rewrite_tags_ehtml(Tags, St)
     end;
-rewrite(Tree, Opts) ->
-    Fun = fun (T) -> rewrite(T, Opts) end,
-    erl_syntax_lib:map_subtrees(Fun, Tree).
+rewrite(Tree, St) ->
+    Fun = fun (T, StN) -> rewrite(T, StN) end,
+    erl_syntax_lib:mapfold_subtrees(Fun, St, Tree).
 
+-spec rewrite_tags_ehtml([tag()], state()) -> {syntaxTree(), state()}.
+rewrite_tags_ehtml(Tags, St) ->
+    {Tags1, St1} = lists:mapfoldl(fun rewrite_tag_ehtml/2, St, Tags),
+    {list_unless_singleton(Tags1), St1}.
 
-rewrite_tags_ehtml(Tags, Opts) ->
-    list_unless_singleton([rewrite_tag_ehtml(Tag, Opts) || Tag <- Tags]).
+-spec rewrite_tag_ehtml(tag(), state()) -> {syntaxTree(), state()}.
+rewrite_tag_ehtml({tag, _Anno, Name, [], []}, St) ->
+    {erl_syntax:tuple([erl_syntax:atom(Name)]), St};
+rewrite_tag_ehtml({tag, _Anno, Name, Attrs, []}, St) ->
+    {Attrs1, St1} = rewrite_attrs_ehtml(Attrs, St),
+    {erl_syntax:tuple([erl_syntax:atom(Name), Attrs1]), St1};
+rewrite_tag_ehtml({tag, _Anno, Name, Attrs, Exprs}, St) ->
+    {Attrs1, St1} = rewrite_attrs_ehtml(Attrs, St),
+    {Exprs1, St2} = lists:mapfoldl(fun rewrite/2, St1, Exprs),
+    Body = list_unless_singleton(Exprs1),
+    {erl_syntax:tuple([erl_syntax:atom(Name), Attrs1, Body]), St2}.
 
-rewrite_tag_ehtml({tag, _Anno, Name, [], []}, _Opts) ->
-    erl_syntax:tuple([erl_syntax:atom(Name)]);
-rewrite_tag_ehtml({tag, _Anno, Name, Attrs, []}, Opts) ->
-    erl_syntax:tuple([
-        erl_syntax:atom(Name),
-        rewrite_attrs_ehtml(Attrs, Opts)
-    ]);
-rewrite_tag_ehtml({tag, _Anno, Name, Attrs, Body}, Opts) ->
-    erl_syntax:tuple([
-        erl_syntax:atom(Name),
-        rewrite_attrs_ehtml(Attrs, Opts),
-        list_unless_singleton([rewrite(Expr, Opts) || Expr <- Body])
-    ]).
+-spec rewrite_attrs_ehtml([tag_attr()], state()) -> {syntaxTree(), state()}.
+rewrite_attrs_ehtml(Attrs, St) ->
+    {Attrs1, St1} = lists:mapfoldl(fun rewrite_attr_ehtml/2, St, Attrs),
+    {erl_syntax:list(Attrs1), St1}.
 
-rewrite_attrs_ehtml(Attrs, Opts) ->
-    erl_syntax:list([rewrite_attr_ehtml(Attr, Opts) || Attr <- Attrs]).
+-spec rewrite_attr_ehtml(tag_attr(), state()) ->  {syntaxTree(), state()}.
+rewrite_attr_ehtml({min_attr, _Anno, Name}, St) ->
+    {erl_syntax:atom(Name), St};
+rewrite_attr_ehtml({attr, _Anno, Name, Expr}, St) ->
+    {Expr1, St1} = rewrite(Expr, St),
+    {erl_syntax:tuple([erl_syntax:atom(Name), Expr1]), St1}.
 
-rewrite_attr_ehtml({min_attr, _Anno, Name}, _Opts) ->
-    erl_syntax:atom(Name);
-rewrite_attr_ehtml({attr, _Anno, Name, Expr}, Opts) ->
-    erl_syntax:tuple([erl_syntax:atom(Name), rewrite(Expr, Opts)]).
-
-rewrite_tags_pre(Tags, Opts) ->
-    Encoding = get_option(encoding, Opts),
-    erl_syntax:tuple([
+-spec rewrite_tags_pre([tag()], state()) -> {syntaxTree(), state()}.
+rewrite_tags_pre(Tags, St) ->
+    Encoding = get_option(encoding, St),
+    {Tags1, St1} = lists:mapfoldl(fun rewrite_tag_pre/2, St, Tags),
+    Result = erl_syntax:tuple([
         erl_syntax:atom(pre_html),
-        compact(flatten([rewrite_tag_pre(Tag, Opts) || Tag <- Tags]), Encoding)
-    ]).
+        compact(flatten(Tags1), Encoding)
+    ]),
+    {Result, St1}.
 
-rewrite_tag_pre({tag, _Anno, Name, Attrs, []}, Opts) ->
-    erl_syntax:list(
+-spec rewrite_tag_pre(tag(), state()) -> {syntaxTree(), state()}.
+rewrite_tag_pre({tag, _Anno, Name, Attrs, []}, St0) ->
+    {Attrs1, St} = lists:mapfoldl(fun rewrite_attr_pre/2, St0, Attrs),
+    Result = erl_syntax:list(
         [erl_syntax:string("<" ++ atom_to_list(Name))] ++
-        [rewrite_attr_pre(Attr, Opts) || Attr <- Attrs] ++
+        Attrs1 ++
         [erl_syntax:string(html_end_tag(Name))]
-    );
-rewrite_tag_pre({tag, _Anno, Name, Attrs, Body}, Opts) ->
-    erl_syntax:list(
+    ),
+    {Result, St};
+rewrite_tag_pre({tag, _Anno, Name, Attrs, Body}, St0) ->
+    {Attrs1, St1} = lists:mapfoldl(fun rewrite_attr_pre/2, St0, Attrs),
+    {Body1, St} = lists:mapfoldl(fun interpolate_expr/2, St1, Body),
+    Result = erl_syntax:list(
         [erl_syntax:string("<" ++ atom_to_list(Name))] ++
-        [rewrite_attr_pre(Attr, Opts) || Attr <- Attrs] ++
+        Attrs1 ++
         [erl_syntax:string(">")] ++
-        [rewrite_body_expr_pre(Expr, Opts) || Expr <- Body] ++
+        Body1 ++
         [erl_syntax:string("</" ++ atom_to_list(Name) ++ ">")]
-    ).
+    ),
+    {Result, St}.
 
-rewrite_attr_pre({min_attr, _Anno, Name}, _Opts) ->
-    erl_syntax:string(" " ++ atom_to_list(Name));
-rewrite_attr_pre({attr, _Anno, Name, Expr}, Opts) ->
-    erl_syntax:list([
+-spec rewrite_attr_pre(tag_attr(), state()) -> {syntaxTree(), state()}.
+rewrite_attr_pre({min_attr, _Anno, Name}, St) ->
+    {erl_syntax:string(" " ++ atom_to_list(Name)), St};
+rewrite_attr_pre({attr, _Anno, Name, Expr0}, St0) ->
+    {Expr, St} = interpolate_attr_expr(Expr0, St0),
+    Result = erl_syntax:list([
         erl_syntax:string(" " ++ atom_to_list(Name) ++ "=\""),
-        rewrite_attr_expr_pre(Expr, Opts),
+        Expr,
         erl_syntax:string("\"")
-    ]).
+    ]),
+    {Result, St}.
 
-rewrite_body_expr_pre(SourceExpr, Opts) ->
-    Expr = rewrite(SourceExpr, Opts),
+-spec interpolate_expr(syntaxTree(), state()) -> {syntaxTree(), state()}.
+interpolate_expr(SourceExpr, St0) ->
+    Pos = erl_syntax:get_pos(SourceExpr),
+    {Expr, St1} = rewrite(SourceExpr, St0),
     case erl_syntax:type(Expr) of
         string ->
-            erl_syntax:string(sanitize(erl_syntax:string_value(Expr), Opts));
+            interpolate_string(erl_syntax:string_value(Expr), Pos, St1);
         char ->
-            erl_syntax:string(sanitize([erl_syntax:char_value(Expr)], Opts));
+            interpolate_string([erl_syntax:char_value(Expr)], Pos, St1);
         integer ->
-            erl_syntax:string(sanitize([erl_syntax:integer_value(Expr)], Opts));
+            interpolate_string([erl_syntax:integer_value(Expr)], Pos, St1);
         nil ->
-            erl_syntax:nil();
+            {erl_syntax:nil(), St1};
         list ->
-            Elems = erl_syntax:list_elements(Expr),
-            erl_syntax:list([rewrite_body_expr_pre(E, Opts) || E <- Elems]);
+            Elems0 = erl_syntax:list_elements(Expr),
+            {Elems, St} = lists:mapfoldl(fun interpolate_expr/2, St1, Elems0),
+            {erl_syntax:list(Elems), St};
         list_comp ->
-            erl_syntax:list_comp(
-                rewrite_body_expr_pre(erl_syntax:list_comp_template(Expr), Opts),
-                erl_syntax:list_comp_body(Expr)
-            );
+            {Template, St} = interpolate_expr(erl_syntax:list_comp_template(Expr), St1),
+            Body = erl_syntax:list_comp_body(Expr),
+            {erl_syntax:list_comp(Template, Body), St};
         _ ->
-            apply_interpolate(Expr, Opts)
+            {apply_interpolate(Expr, St1), St1}
     end.
 
-rewrite_attr_expr_pre(SourceExpr, Opts) ->
-    Expr = rewrite(SourceExpr, Opts),
+-spec interpolate_attr_expr(syntaxTree(), state()) -> {syntaxTree(), state()}.
+interpolate_attr_expr(SourceExpr, St0) ->
+    Pos = erl_syntax:get_pos(SourceExpr),
+    {Expr, St1} = rewrite(SourceExpr, St0),
     case erl_syntax:type(Expr) of
         string ->
-            erl_syntax:string(sanitize(erl_syntax:string_value(Expr), Opts));
+            interpolate_string(erl_syntax:string_value(Expr), Pos, St1);
         char ->
-            erl_syntax:string(integer_to_list(erl_syntax:char_value(Expr)));
+            interpolate_string(integer_to_list(erl_syntax:char_value(Expr)), Pos, St1);
         integer ->
-            erl_syntax:string(integer_to_list(erl_syntax:integer_value(Expr)));
-        _ -> apply_interpolate_attr(Expr, Opts)
+            interpolate_string(integer_to_list(erl_syntax:integer_value(Expr)), Pos, St1);
+        _ ->
+            {apply_interpolate_attr(Expr, St1), St1}
     end.
 
-sanitize(String, Opts) ->
-    Encoding = get_option(encoding, Opts),
-    case unicode:characters_to_list(String, Encoding) of
+-spec interpolate_string(string(), term(), state()) -> {syntaxTree(), state()}.
+interpolate_string(String, Pos, St0) ->
+    Encoding = get_option(encoding, St0),
+    {Sanitized, St} = case unicode:characters_to_list(String, Encoding) of
         {error, _, _} ->
-            % TODO: Generate proper error (requires passing State instead of Opts)
-            exit({invalid_character, Encoding});
+            {"", add_error(Pos, {invalid_character, Encoding}, St0)};
         ValidString ->
-            hterl_api:htmlize(ValidString)
-    end.
+           {hterl_api:htmlize(ValidString), St0}
+    end,
+    {erl_syntax:string(Sanitized), St}.
 
 apply_interpolate_attr(Value, Opts) ->
     Encoding = get_option(encoding, Opts),
@@ -355,14 +385,16 @@ encoding_to_binary_field_types(Encoding) when is_atom(Encoding) ->
 encoding_to_binary_field_types({Family, Endian}) ->
     [erl_syntax:atom(Family), erl_syntax:atom(Endian)].
 
-
-get_option(encoding, Opts) ->
-    proplists:get_value(encoding, Opts, ?DEFAULT_ENCODING).
+get_option(encoding, St) ->
+    proplists:get_value(encoding, St#state.options, ?DEFAULT_ENCODING).
 
 
 location(none) -> none;
 location(Anno) ->
     erl_anno:line(Anno).
+
+add_error(E, St) ->
+    add_error(none, E, St).
 
 add_error(Anno, E, St) ->
     add_error(St#state.infile, Anno, E, St).
@@ -371,6 +403,8 @@ add_error(File, Anno, E, St) ->
     Loc = location(Anno),
     St#state{errors = [{File, {Loc,?MODULE,E}}|St#state.errors]}.
 
+format_error({invalid_character, Encoding}) ->
+    io_lib:fwrite("invalid character for encoding ~tw", [Encoding]);
 format_error({error, ?MODULE, Error}) when is_list(Error) ->
     Error;
 format_error({error, Module, Error}) ->
