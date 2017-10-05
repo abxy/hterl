@@ -234,7 +234,7 @@ rewrite_tag_pre({tag, _Anno, Name, Attrs, []}, St0) ->
     {Result, St};
 rewrite_tag_pre({tag, _Anno, Name, Attrs, Body}, St0) ->
     {Attrs1, St1} = lists:mapfoldl(fun rewrite_attr_pre/2, St0, Attrs),
-    {Body1, St} = lists:mapfoldl(fun rewrite_body_expr_pre/2, St1, Body),
+    {Body1, St} = lists:mapfoldl(fun interpolate_expr/2, St1, Body),
     Result = erl_syntax:list(
         [erl_syntax:string("<" ++ atom_to_list(Name))] ++
         Attrs1 ++
@@ -247,65 +247,65 @@ rewrite_tag_pre({tag, _Anno, Name, Attrs, Body}, St0) ->
 -spec rewrite_attr_pre(tag_attr(), state()) -> {syntaxTree(), state()}.
 rewrite_attr_pre({min_attr, _Anno, Name}, St) ->
     {erl_syntax:string(" " ++ atom_to_list(Name)), St};
-rewrite_attr_pre({attr, _Anno, Name, Expr}, Opts) ->
-    erl_syntax:list([
+rewrite_attr_pre({attr, _Anno, Name, Expr0}, St0) ->
+    {Expr, St} = interpolate_attr_expr(Expr0, St0),
+    Result = erl_syntax:list([
         erl_syntax:string(" " ++ atom_to_list(Name) ++ "=\""),
-        rewrite_attr_expr_pre(Expr, Opts),
+        Expr,
         erl_syntax:string("\"")
-    ]).
+    ]),
+    {Result, St}.
 
--spec rewrite_body_expr_pre(syntaxTree(), state()) -> {syntaxTree(), state()}.
-rewrite_body_expr_pre(SourceExpr, St0) ->
+-spec interpolate_expr(syntaxTree(), state()) -> {syntaxTree(), state()}.
+interpolate_expr(SourceExpr, St0) ->
+    Pos = erl_syntax:get_pos(SourceExpr),
     {Expr, St1} = rewrite(SourceExpr, St0),
     case erl_syntax:type(Expr) of
         string ->
-            interpolate_string(erl_syntax:string_value(Expr), St1);
+            interpolate_string(erl_syntax:string_value(Expr), Pos, St1);
         char ->
-            interpolate_string([erl_syntax:char_value(Expr)], St1);
+            interpolate_string([erl_syntax:char_value(Expr)], Pos, St1);
         integer ->
-            interpolate_string([erl_syntax:integer_value(Expr)], St1);
+            interpolate_string([erl_syntax:integer_value(Expr)], Pos, St1);
         nil ->
             {erl_syntax:nil(), St1};
         list ->
             Elems0 = erl_syntax:list_elements(Expr),
-            {Elems, St2} = lists:mapfoldl(fun rewrite_body_expr_pre/2, St1, Elems0),
-            {erl_syntax:list(Elems), St2};
+            {Elems, St} = lists:mapfoldl(fun interpolate_expr/2, St1, Elems0),
+            {erl_syntax:list(Elems), St};
         list_comp ->
-            {Template, St2} = rewrite_body_expr_pre(erl_syntax:list_comp_template(Expr), St1),
+            {Template, St} = interpolate_expr(erl_syntax:list_comp_template(Expr), St1),
             Body = erl_syntax:list_comp_body(Expr),
-            {erl_syntax:list_comp(Template, Body), St2};
+            {erl_syntax:list_comp(Template, Body), St};
         _ ->
             {apply_interpolate(Expr, St1), St1}
     end.
 
--spec rewrite_attr_expr_pre(syntaxTree(), state()) -> {syntaxTree(), state()}.
-rewrite_attr_expr_pre(SourceExpr, St0) ->
+-spec interpolate_attr_expr(syntaxTree(), state()) -> {syntaxTree(), state()}.
+interpolate_attr_expr(SourceExpr, St0) ->
+    Pos = erl_syntax:get_pos(SourceExpr),
     {Expr, St1} = rewrite(SourceExpr, St0),
     case erl_syntax:type(Expr) of
         string ->
-            interpolate_string(erl_syntax:string_value(Expr), St1);
+            interpolate_string(erl_syntax:string_value(Expr), Pos, St1);
         char ->
-            interpolate_string(integer_to_list(erl_syntax:char_value(Expr)), St1);
+            interpolate_string(integer_to_list(erl_syntax:char_value(Expr)), Pos, St1);
         integer ->
-            interpolate_string(integer_to_list(erl_syntax:integer_value(Expr)), St1);
+            interpolate_string(integer_to_list(erl_syntax:integer_value(Expr)), Pos, St1);
         _ ->
             {apply_interpolate_attr(Expr, St1), St1}
     end.
 
--spec interpolate_string(string(), state()) -> {syntaxTree(), state()}.
-interpolate_string(String, St0) ->
-    {Sanitized, St} = sanitize(String, St0),
-    {erl_syntax:string(Sanitized), St}.
-
--spec sanitize(string(), state()) -> {string(), state()}.
-sanitize(String, St) ->
-    Encoding = get_option(encoding, St),
-    case unicode:characters_to_list(String, Encoding) of
+-spec interpolate_string(string(), term(), state()) -> {syntaxTree(), state()}.
+interpolate_string(String, Pos, St0) ->
+    Encoding = get_option(encoding, St0),
+    {Sanitized, St} = case unicode:characters_to_list(String, Encoding) of
         {error, _, _} ->
-            {"", add_error({invalid_character, Encoding}, St)};
+            {"", add_error(Pos, {invalid_character, Encoding}, St0)};
         ValidString ->
-           {hterl_api:htmlize(ValidString), St}
-    end.
+           {hterl_api:htmlize(ValidString), St0}
+    end,
+    {erl_syntax:string(Sanitized), St}.
 
 apply_interpolate_attr(Value, Opts) ->
     Encoding = get_option(encoding, Opts),
