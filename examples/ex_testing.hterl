@@ -31,3 +31,16 @@ pre_html_in_body() ->
         {pre_html, [0, 255]},
         {pre_html, "\000\377"} % 377 octal = 255 decimal
     </p>.
+
+prerender() ->
+    <p>
+        % Contiguous string, character, and integer literals,
+        % and tags, as well as lists thereof should coalesce
+        % into a single binary literal when compiled with the
+        % precompile option.
+        "A", $B, 67, <b></b>, [],
+        ["A", $B, 67, <b></b>, []]
+    </p>
+    <p>
+        % Siblings should also coalesce.
+    </p>.

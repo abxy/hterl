@@ -32,6 +32,11 @@ test_pre_html_in_body() ->
         <<"<p>"/utf8, 0, 255, 0, 255, 0, 255, "</p>"/utf8>>,
         render_binary(ex_testing:pre_html_in_body(), utf8)).
 
+prerender_test() ->
+    compile_from_examples("ex_testing", [precompile, {encoding, utf8}]),
+    Expect = {pre_html, <<"<p>ABC<b></b>ABC<b></b></p><p></p>"/utf8>>},
+    ?assertEqual(Expect, ex_testing:prerender()).
+
 %-------------------------------------------------------------------------------
 % Tests
 

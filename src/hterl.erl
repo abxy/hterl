@@ -221,7 +221,10 @@ rewrite_tags_pre(Tags, St) ->
         erl_syntax:atom(pre_html),
         compact(flatten(Tags1), Encoding)
     ]),
-    {Result, St1}.
+    % This annotation lets us distinguish a generated
+    % pre_html tuple from one that was in the source.
+    AnnotatedResult = erl_syntax:add_ann(prerendered, Result),
+    {AnnotatedResult, St1}.
 
 -spec rewrite_tag_pre(tag(), state()) -> {syntaxTree(), state()}.
 rewrite_tag_pre({tag, _Anno, Name, Attrs, []}, St0) ->
@@ -277,9 +280,24 @@ interpolate_expr(SourceExpr, St0) ->
             {Template, St} = interpolate_expr(erl_syntax:list_comp_template(Expr), St1),
             Body = erl_syntax:list_comp_body(Expr),
             {erl_syntax:list_comp(Template, Body), St};
+        tuple ->
+            case has_ann(prerendered, Expr) of
+                true ->
+                    % This is a {pre_html, _} tuple that was generated from a tags expression.
+                    % It's safe to extract the rendered blob and elide the call to `interpolate`.
+                    [First, Second] = erl_syntax:tuple_elements(Expr),
+                    true = erl_syntax:is_atom(First, pre_html),
+                    {Second, St1};
+                false -> 
+                    {apply_interpolate(Expr, St1), St1}                    
+            end;
         _ ->
             {apply_interpolate(Expr, St1), St1}
     end.
+
+-spec has_ann(term(), syntaxTree()) -> boolean().
+has_ann(A, Node) ->
+    lists:member(A, erl_syntax:get_ann(Node)).
 
 -spec interpolate_attr_expr(syntaxTree(), state()) -> {syntaxTree(), state()}.
 interpolate_attr_expr(SourceExpr, St0) ->
