@@ -32,6 +32,25 @@ pre_html_in_body() ->
         {pre_html, "\000\377"} % 377 octal = 255 decimal
     </p>.
 
+integer_attributes() ->
+    Var = 65,
+    % Renders to: <p attr="65" attr="65" attr="65"></p>
+    <p attr=65 attr=$A attr=Var></p>.
+
+string_attributes() ->
+    Var = "String",
+    % Renders to: <p attr="String" attr="String"></p>
+    <p attr="String" attr=Var></p>.
+
+atom_attributes() ->
+    Var = atom,
+    % Renders to: <p attr="atom" attr="atom"></p>
+    <p attr=atom attr=Var></p>.
+
+binary_attributes() ->
+    Var = <<"binary"/utf8>>,
+    <p attr=(<<"binary"/utf8>>) attr=Var></p>.
+
 prerender() ->
     <p>
         % Contiguous string, character, and integer literals,

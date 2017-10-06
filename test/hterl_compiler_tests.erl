@@ -13,7 +13,12 @@ test_ex_testing(Options) ->
         [
             fun test_integers_in_body/0,
             fun test_strings_in_body/0,
-            fun test_pre_html_in_body/0
+            fun test_pre_html_in_body/0,
+
+            fun test_integer_attributes/0,
+            fun test_string_attributes/0,
+            fun test_atom_attributes/0,
+            fun test_binary_attributes/0
         ]
     }.
 
@@ -31,6 +36,26 @@ test_pre_html_in_body() ->
     ?assertMatch(
         <<"<p>"/utf8, 0, 255, 0, 255, 0, 255, "</p>"/utf8>>,
         render_binary(ex_testing:pre_html_in_body(), utf8)).
+
+test_integer_attributes() ->
+    ?assertEqual(
+        <<"<p attr=\"65\" attr=\"65\" attr=\"65\"></p>"/utf8>>,
+        render_binary(ex_testing:integer_attributes(), utf8)).
+
+test_string_attributes() ->
+    ?assertEqual(
+        <<"<p attr=\"String\" attr=\"String\"></p>"/utf8>>,
+        render_binary(ex_testing:string_attributes(), utf8)).
+
+test_atom_attributes() ->
+    ?assertEqual(
+        <<"<p attr=\"atom\" attr=\"atom\"></p>"/utf8>>,
+        render_binary(ex_testing:atom_attributes(), utf8)).
+
+test_binary_attributes() ->
+    ?assertEqual(
+        <<"<p attr=\"binary\" attr=\"binary\"></p>"/utf8>>,
+        render_binary(ex_testing:binary_attributes(), utf8)).
 
 prerender_test() ->
     compile_from_examples("ex_testing", [precompile, {encoding, utf8}]),
