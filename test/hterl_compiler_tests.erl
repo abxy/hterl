@@ -35,8 +35,10 @@ test_pre_html_in_body() ->
 %-------------------------------------------------------------------------------
 % Tests
 
-prerender_unicode_little_test() ->
-    ?assertNotMatch(ok, hterl:file(from_examples_dir("ex_unicode"), [precompile, {encoding, latin1}])).
+prerender_unicode_latin1_test() ->
+    % ex_unicode contains characters that are invalid in latin1 so it should fail to compile
+    CompilerResult = hterl:file(from_examples_dir("ex_unicode"), [precompile, {encoding, latin1}]),
+    ?assertNotMatch(ok, CompilerResult).
 
 prerender_unicode_utf8_test() ->
     compile_from_examples("ex_unicode", [precompile, {encoding, utf8}]),
