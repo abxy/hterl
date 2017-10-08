@@ -25,6 +25,13 @@ strings_in_body() ->
         LessThanSign
     </p>.
 
+binaries_in_body() ->
+    Binary = <<"AÖ 漢字 🔥"/utf8>>,
+    <p>
+        Binary,
+        <<"AÖ 漢字 🔥"/utf8>>
+    </p>.
+
 pre_html_in_body() ->
     <p>
         {pre_html, <<0, 255>>},
@@ -50,6 +57,18 @@ atom_attributes() ->
 binary_attributes() ->
     Var = <<"binary"/utf8>>,
     <p attr=(<<"binary"/utf8>>) attr=Var></p>.
+
+escaping_attributes() ->
+    String = "<>\"&",
+    Atom = '<>"&',
+    Binary = <<"<>\"&"/utf8>>,
+    <p
+        attr="<>\"&"
+        attr='<>"&'
+        attr=(<<"<>\"&"/utf8>>)
+        attr=String
+        attr=Atom
+        attr=Binary></p>.
 
 prerender() ->
     <p>

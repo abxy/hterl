@@ -13,6 +13,7 @@ test_ex_testing(Options) ->
         [
             fun test_integers_in_body/0,
             fun test_strings_in_body/0,
+            fun test_binaries_in_body/0,
             fun test_pre_html_in_body/0,
 
             fun test_integer_attributes/0,
@@ -31,6 +32,11 @@ test_strings_in_body() ->
     ?assertMatch(
         <<"<p>AAA&lt;&lt;&lt;</p>"/utf8>>,
         render_binary(ex_testing:strings_in_body(), utf8)).
+
+test_binaries_in_body() ->
+    ?assertEqual(
+        <<"<p>AÖ 漢字 🔥AÖ 漢字 🔥</p>"/utf8>>,
+        render_binary(ex_testing:binaries_in_body(), utf8)).
 
 test_pre_html_in_body() ->
     ?assertMatch(

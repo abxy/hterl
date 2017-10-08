@@ -3,7 +3,7 @@
 -export([interpolate/2, interpolate_attr/2]).
 -export([render/1, render/2]).
 
--import(unicode, [characters_to_binary/3]).
+-import(unicode, [characters_to_binary/3, characters_to_list/2]).
 
 %% htmlize
 htmlize(Bin) when is_binary(Bin) ->
@@ -44,7 +44,7 @@ interpolate([H|T], Encoding) ->
 interpolate([], _Encoding) -> [];
 interpolate({pre_html, X}, _Encoding) -> X;
 interpolate(Bin, Encoding) when is_binary(Bin) ->
-    Decoded = unicode:characters_to_list(Bin, Encoding),
+    Decoded = characters_to_list(Bin, Encoding),
     characters_to_binary(htmlize_l(Decoded), Encoding, Encoding);
 interpolate(Tuple, Encoding) when is_tuple(Tuple) ->
     render(Tuple, Encoding).
@@ -76,7 +76,10 @@ interpolate_attr(Atom, Encoding) when is_atom(Atom) ->
 interpolate_attr(Integer, Encoding) when is_integer(Integer) ->
     characters_to_binary(integer_to_list(Integer), latin1, Encoding);
 interpolate_attr(String, Encoding) when is_list(String) ->
-    characters_to_binary(htmlize_l(String), Encoding, Encoding).
+    characters_to_binary(htmlize_l(String), Encoding, Encoding);
+interpolate_attr(Bin, Encoding) when is_binary(Bin) ->
+    Decoded = characters_to_list(Bin, Encoding),
+    characters_to_binary(htmlize_l(Decoded), Encoding, Encoding).
 
 %% render
 
