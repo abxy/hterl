@@ -10,7 +10,6 @@
 
 -record(state, {
     infile,
-    encoding,
     inport,
     outfile,
     forms = [],
@@ -53,15 +52,10 @@ start(InFileX, Options) ->
 
 infile(St0) ->
     InFile = St0#state.infile,
-    St = case file:open(InFile, [read, read_ahead]) of
-        {ok, Inport} ->
-            try
-                Encoding = select_encoding(Inport),
-                St1 = St0#state{inport = Inport, encoding = Encoding},
-                passes(St1)
-            after
-                ok = file:close(Inport)
-            end;
+    St = case hterl_epp:open(InFile, []) of
+        {ok, Epp} ->
+            St1 = St0#state{inport = Epp},    
+            passes(St1);
         {error, Reason} ->
             add_error(InFile, none, {file_error, Reason}, St0)
     end,
@@ -70,15 +64,6 @@ infile(St0) ->
         false -> ok
     end,
     hterl_ret(St).
-
-select_encoding(Inport) ->
-    % Set port encoding, defaulting to utf8 (epp's default)
-    % unless overridden by a directive in the file.
-    EncodingOverride = epp:set_encoding(Inport),
-    case EncodingOverride of
-        none -> epp:default_encoding();
-        Encoding -> Encoding
-    end.
 
 assure_extension(File, Ext) ->
     lists:concat([strip_extension(File, Ext), Ext]).
@@ -100,7 +85,6 @@ hterl_ret(St) ->
 has_errors(#state{errors = []}) -> false;
 has_errors(_) -> true.
 
-
 passes(St) ->
     output(transform(parse(St))).
 
@@ -111,10 +95,10 @@ transform(St) ->
 
 output(St) ->
     #state{forms=Forms, outfile=OutFile} = St,
-    case file:open(OutFile, [write, delayed_write]) of
+    FileOpts = [write, delayed_write, {encoding, utf8}],
+    case file:open(OutFile, FileOpts) of
         {ok, OutPort} ->
             try
-                set_encoding(OutPort, St#state.encoding),
                 [write_form(OutPort, Form) || Form <- Forms],
                 St
             after
@@ -128,30 +112,24 @@ write_form(Port, Form) ->
     PP = erl_pp:form(Form),
     ok = file:write(Port, [PP, $\n]).
 
-set_encoding(Port, Encoding) ->
-    ok = io:setopts(Port, [{encoding, Encoding}]).
-
 report_errors(St) ->
     lists:foreach(fun report_error/1, lists:sort(St#state.errors)).
-
 
 report_error({File, {none, Mod, E}}) ->
     io:fwrite(<<"~ts: ~ts\n">>, [File,Mod:format_error(E)]);
 report_error({File, {Line, Mod, E}}) ->
     io:fwrite(<<"~ts:~w: ~ts\n">>, [File,Line,Mod:format_error(E)]).
 
-
 parse(St0) ->
-    St = parse_next(St0#state.inport, 1, St0),
+    St = parse_next(St0#state.inport, St0),
     St#state{forms = lists:reverse(St#state.forms)}.
 
-parse_next(Inport, Line, St0) ->
-    {NextLine, Form} = read_form(Inport, Line),
+parse_next(Inport, St0) ->
+    Form = read_form(Inport),
     case parse(Form, St0) of
         {eof, St} -> St;
-        St -> parse_next(Inport, NextLine, St)
+        St -> parse_next(Inport, St)
     end.
-
 
 parse(eof, St) ->
     {eof, St};
@@ -160,18 +138,17 @@ parse({error, ErrorLine, Error}, St0) ->
 parse(Form, St0) ->
     St0#state{forms = [Form | St0#state.forms]}.
 
-
-read_form(Inport, Line) ->
-    case hterl_scan:scan(Inport, '', Line) of
-        {eof, NextLine} ->
-            {NextLine, eof};
-        {ok, Input, NextLine} ->
-            {NextLine, case hterl_parser:parse(Input) of
+read_form(Epp) ->
+    case hterl_epp:scan_hterl_form(Epp) of
+        {ok, Toks} ->
+            case hterl_parser:parse(Toks) of
                 {error, {ErrorLine, Mod, Message}} ->
                     {error, ErrorLine, {error, Mod, Message}};
                 {ok, Form} ->
                     Form
-            end}
+            end;
+        {eof, _Line} ->
+            eof
     end.
 
 -spec rewrite(tags() | syntaxTree(), state()) -> {syntaxTree(), state()}.

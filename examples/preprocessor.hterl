@@ -1,0 +1,30 @@
+-module(preprocessor).
+-compile([export_all, nowarn_export_all]).
+
+whoami() -> ?MODULE.
+
+macros() ->
+    <span>
+        % The ?LINE macro expands to the line number in the hterl source file.
+        io_lib:format("~s ~w", [?FUNCTION_NAME, ?LINE])
+    </span>.
+
+% -define(BAD, 1).
+
+-ifdef(BAD).
+
+-define(OPEN, <span>).
+-define(CLOSE, </span>).
+
+% I don't condone this, but it does what you would expected
+this_is_bad() ->
+    ?OPEN "Hi" ?CLOSE.
+
+-else.
+
+-define(SPAN(X), <span>X</span>).
+
+this_is_ok() ->
+    ?SPAN(<u> "Hi" </u>).    
+
+-endif.
