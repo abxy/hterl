@@ -14,6 +14,7 @@
     outfile,
     forms = [],
     errors = [],
+    warnings = [],
     options = []
 }).
 
@@ -32,29 +33,34 @@
 file(Path) ->
     file(Path, []).
 
+-spec file(string(), opts()) -> ok | {ok, list()} | error | {error, list(), list()}.
 file(Path, Options) ->
-    St = start(Path, Options),
+    St = start(Path, #state{options = Options}),
     infile(St).
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
 
-start(InFileX, Options) ->
+start(InFileX, St) ->
+    Output = get_option(output, St),
     InFile = assure_extension(InFileX, ".hterl"),
     OutFileX = filename:rootname(InFile, ".hterl"),
-    OutFile = assure_extension(OutFileX, ".erl"),
-    #state{
+    OutFile = assure_extension(OutFileX, output_extension(Output)),
+    St#state{
         infile = InFile,
-        outfile = OutFile,
-        options = Options
+        outfile = OutFile
     }.
+
+output_extension(beam) -> ".beam";
+output_extension(erl) -> ".erl".
+
 
 infile(St0) ->
     InFile = St0#state.infile,
     St = case hterl_epp:open(InFile, []) of
         {ok, Epp} ->
-            St1 = St0#state{inport = Epp},    
+            St1 = St0#state{inport = Epp},
             passes(St1);
         {error, Reason} ->
             add_error(InFile, none, {file_error, Reason}, St0)
@@ -64,6 +70,9 @@ infile(St0) ->
         false -> ok
     end,
     hterl_ret(St).
+
+has_errors(#state{errors = []}) -> false;
+has_errors(_) -> true.
 
 assure_extension(File, Ext) ->
     lists:concat([strip_extension(File, Ext), Ext]).
@@ -77,21 +86,35 @@ strip_extension(File, Ext) ->
 
 hterl_ret(St) ->
     report_errors(St),
-    case has_errors(St) of
-        false -> ok;
-        true -> error
+    case St of
+        #state{errors=[], warnings=[]} -> ok;
+        #state{errors=[], warnings=Ws} -> {ok, Ws};
+        #state{errors=Es, warnings=Ws} -> {error, Es, Ws}
     end.
 
-has_errors(#state{errors = []}) -> false;
-has_errors(_) -> true.
-
 passes(St) ->
-    output(transform(parse(St))).
+    case get_option(output, St) of
+        beam -> compile(transform(parse(St)));
+        erl -> output(transform(parse(St)))
+    end.
+
 
 transform(St) ->
     {Forms, St1} = lists:mapfoldl(fun rewrite/2, St, St#state.forms),
     St1#state{forms = lists:map(fun erl_syntax:revert/1, Forms)}.
 
+compile(St) ->
+    #state{forms=Forms, outfile=OutFile} = St,
+    case compile:forms(Forms, [return]) of
+        {ok, _Mod, Bin} ->
+            ok = file:write_file(OutFile, Bin),
+            St;
+        {ok, _Mod, Bin, Ws} ->
+            ok = file:write_file(OutFile, Bin),
+            St#state{warnings = Ws};
+        {error, Es, Ws} ->
+            St#state{errors = St#state.errors ++ Es, warnings = Ws}
+    end.
 
 output(St) ->
     #state{forms=Forms, outfile=OutFile} = St,
@@ -265,8 +288,8 @@ interpolate_expr(SourceExpr, St0) ->
                     [First, Second] = erl_syntax:tuple_elements(Expr),
                     true = erl_syntax:is_atom(First, pre_html),
                     {Second, St1};
-                false -> 
-                    {apply_interpolate(Expr, St1), St1}                    
+                false ->
+                    {apply_interpolate(Expr, St1), St1}
             end;
         _ ->
             {apply_interpolate(Expr, St1), St1}
@@ -380,16 +403,16 @@ encoding_to_binary_field_types(Encoding) when is_atom(Encoding) ->
 encoding_to_binary_field_types({Family, Endian}) ->
     [erl_syntax:atom(Family), erl_syntax:atom(Endian)].
 
-get_option(encoding, St) ->
-    proplists:get_value(encoding, St#state.options, ?DEFAULT_ENCODING).
+get_option(Opt, St) ->
+    proplists:get_value(Opt, St#state.options, default(Opt)).
 
+default(encoding) -> ?DEFAULT_ENCODING;
+default(output) -> beam;
+default(_) -> undefined.
 
 location(none) -> none;
 location(Anno) ->
     erl_anno:line(Anno).
-
-add_error(E, St) ->
-    add_error(none, E, St).
 
 add_error(Anno, E, St) ->
     add_error(St#state.infile, Anno, E, St).
