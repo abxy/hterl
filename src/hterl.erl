@@ -42,11 +42,12 @@ file(Path, Options) ->
 %% Internal functions
 %%====================================================================
 
-start(InFileX, St) ->
-    Output = get_option(output, St),
-    InFile = assure_extension(InFileX, ".hterl"),
-    OutFileX = filename:rootname(InFile, ".hterl"),
-    OutFile = assure_extension(OutFileX, output_extension(Output)),
+start(InFile0, St = #state{options = Opts}) ->
+    InFile = assure_extension(InFile0, ".hterl"),
+    BaseName = filename:basename(InFile, ".hterl"),
+    OutDir = proplists:get_value(outdir, Opts, filename:dirname(InFile)),
+    OutExt = output_extension(get_option(output, St)),
+    OutFile = filename:join(OutDir, [BaseName, OutExt]),
     St#state{
         infile = InFile,
         outfile = OutFile
@@ -75,14 +76,7 @@ has_errors(#state{errors = []}) -> false;
 has_errors(_) -> true.
 
 assure_extension(File, Ext) ->
-    lists:concat([strip_extension(File, Ext), Ext]).
-
-%% Assumes File is a filename.
-strip_extension(File, Ext) ->
-    case filename:extension(File) of
-        Ext -> filename:rootname(File);
-        _Other -> File
-    end.
+    lists:concat([filename:rootname(File, Ext), Ext]).
 
 hterl_ret(St) ->
     report_errors(St),
