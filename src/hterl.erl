@@ -15,7 +15,9 @@
     forms = [],
     errors = [],
     warnings = [],
-    options = []
+    options = [],
+    dev_mode = false,
+    variable_count = 0
 }).
 
 -type syntaxTree() :: erl_syntax:syntaxTree().
@@ -50,7 +52,8 @@ start(InFile0, St = #state{options = Opts}) ->
     OutFile = filename:join(OutDir, [BaseName, OutExt]),
     St#state{
         infile = InFile,
-        outfile = OutFile
+        outfile = OutFile,
+        dev_mode = proplists:get_bool(dev_mode, Opts)
     }.
 
 output_extension(beam) -> ".beam";
@@ -273,7 +276,7 @@ interpolate_expr(SourceExpr, St0) ->
         list_comp ->
             {Template, St} = interpolate_expr(erl_syntax:list_comp_template(Expr), St1),
             Body = erl_syntax:list_comp_body(Expr),
-            {erl_syntax:list_comp(Template, Body), St};
+            maybe_catch(erl_syntax:list_comp(Template, Body), St);
         tuple ->
             case has_ann(prerendered, Expr) of
                 true ->
@@ -283,11 +286,31 @@ interpolate_expr(SourceExpr, St0) ->
                     true = erl_syntax:is_atom(First, pre_html),
                     {Second, St1};
                 false ->
-                    {apply_interpolate(Expr, St1), St1}
+                    maybe_catch(apply_interpolate(Expr, St1), St1)
             end;
         _ ->
-            {apply_interpolate(Expr, St1), St1}
+            maybe_catch(apply_interpolate(Expr, St1), St1)
     end.
+
+variable(Name, St = #state{variable_count = N}) ->
+    Var = erl_syntax:variable("__" ++ integer_to_list(N) ++ "_" ++ Name),
+    {Var, St#state{variable_count = N + 1}}.
+
+-spec maybe_catch(syntaxTree(), state()) -> {syntaxTree(), state()}.
+maybe_catch(Expr, #state{dev_mode = true} = St0) ->
+    Encoding = get_option(encoding, St0),
+    {Class, St1} = variable("Class", St0),
+    {Error, St2} = variable("Error", St1),
+    {Stacktrace, St3} = variable("Stacktrace", St2),
+    CatchPattern = erl_syntax:class_qualifier(Class, Error, Stacktrace),
+    CatchBody = erl_syntax:application(
+        erl_syntax:atom(hterl_api),
+        erl_syntax:atom(print_exception),
+        [Class, Error, Stacktrace, erl_syntax:abstract(Encoding)]),
+    CatchClause = erl_syntax:clause([CatchPattern], none, [CatchBody]),
+    TryExpr = erl_syntax:try_expr([Expr], [CatchClause]),
+    {TryExpr, St3};
+maybe_catch(Expr, St) -> {Expr, St}.
 
 -spec has_ann(term(), syntaxTree()) -> boolean().
 has_ann(A, Node) ->
@@ -319,19 +342,20 @@ interpolate_string(String, Pos, St0) ->
     end,
     {erl_syntax:string(Sanitized), St}.
 
-apply_interpolate_attr(Value, Opts) ->
-    Encoding = get_option(encoding, Opts),
+apply_interpolate_attr(Value, St) ->
+    Encoding = get_option(encoding, St),
     erl_syntax:application(
         erl_syntax:atom(hterl_api),
         erl_syntax:atom(interpolate_attr),
         [Value, erl_syntax:abstract(Encoding)]).
 
-apply_interpolate(Value, Opts) ->
-    Encoding = get_option(encoding, Opts),
+apply_interpolate(Value, St) ->
+    Encoding = get_option(encoding, St),
     erl_syntax:application(
         erl_syntax:atom(hterl_api),
         erl_syntax:atom(interpolate),
         [Value, erl_syntax:abstract(Encoding)]).
+
 
 list_unless_singleton([Single]) -> Single;
 list_unless_singleton(List) -> erl_syntax:list(List).

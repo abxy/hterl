@@ -2,6 +2,7 @@
 -export([htmlize/1]).
 -export([interpolate/2, interpolate_attr/2]).
 -export([render/1, render/2]).
+-export([print_exception/4]).
 
 -import(unicode, [characters_to_binary/3, characters_to_list/2]).
 
@@ -65,11 +66,10 @@ interpolate_string([X|Tail], Acc, Encoding) when is_integer(X) ->
 interpolate_string([], Acc, Encoding) ->
     String = lists:reverse(Acc),
     characters_to_binary(String, Encoding, Encoding);
-interpolate_string([_|_] = List, Acc, Encoding) ->
+interpolate_string(X, Acc, Encoding) ->
     String = lists:reverse(Acc),
     Binary = characters_to_binary(String, Encoding, Encoding),
-    [Binary || interpolate(List, Encoding)].
-
+    [Binary | interpolate(X, Encoding)].
 
 interpolate_attr(Atom, Encoding) when is_atom(Atom) ->
     interpolate_attr(atom_to_list(Atom), Encoding);
@@ -109,13 +109,20 @@ render(X, Encoding) when not is_tuple(X) ->
 
 render_attrs([], _Encoding) -> [];
 render_attrs([Name|Attrs], Encoding) when is_atom(Name) ->
-    Rendered = characters_to_binary([($ )|atom_to_list(Name)], Encoding, Encoding), 
+    Rendered = characters_to_binary([($ )|atom_to_list(Name)], Encoding, Encoding),
     [Rendered | render_attrs(Attrs, Encoding)];
 render_attrs([{Name, Value}|Attrs], Encoding) ->
     Pre = characters_to_binary([($ ), atom_to_list(Name), $=, $"], Encoding, Encoding),
     Post = characters_to_binary("\"", Encoding, Encoding),
     RenderedValue = interpolate_attr(Value, Encoding),
     [Pre, RenderedValue, Post | render_attrs(Attrs, Encoding)].
+
+
+%% print_exception
+print_exception(Class, Error, Stacktrace, Encoding) ->
+    render({pre, [{style, "background: red; color: white;"}],
+        io_lib:print({Class, Error, Stacktrace})
+    }, Encoding).
 
 %% Void elements must not have an end tag (</tag>) in HTML5, while for most
 %% elements a proper end tag (<tag></tag>, not <tag />) is mandatory.
