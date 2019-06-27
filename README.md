@@ -203,13 +203,13 @@ Some expression forms need to be surrounded by parentheses when they appear as a
 Notably, function calls have this requirement.
 
 ```
-badge(Type, Content) ->
-    <span class=(badge_class(Type))>Content</i>.
+message(Type, Content) ->
+    <span class=(message_class(Type))>Content</span>.
 
-badge_class(pill) ->
-    "badge badge-pill";
-badge_class(_) ->
-    "badge".
+message_class(error) ->
+    "message message-error";
+message_class(_) ->
+    "message".
 ```
 
 Hypertext Erlang requires all attribute names to be valid Erlang atoms.
