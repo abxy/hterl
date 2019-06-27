@@ -53,7 +53,7 @@ Usage
 Include `hterl` as a dependency in your `rebar.config`, and add the `rebar3_hterl` plugin (found in a [separate repository](https://github.com/abxy/rebar3_hterl/)).
 
 ```
-{deps, [{hterl, "0.9.0"}]}.
+{deps, [{hterl, "0.10.0"}]}.
 
 {plugins, [rebar3_hterl]}.
 ```
