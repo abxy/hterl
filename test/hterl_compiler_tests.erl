@@ -107,7 +107,7 @@ compile_from_examples(File, Options) ->
     compile(from_examples_dir(File), Options).
 
 compile(File, Options) ->
-    ok = hterl:file(File, Options),
+    ok = hterl:file(File, [{output, erl}] ++ Options),
     {ok, Module, Binary} = compile:file(File, [binary]),
     {module, Module} = code:load_binary(Module, File, Binary).
 

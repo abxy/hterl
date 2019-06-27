@@ -1,44 +1,160 @@
-# Hyper-Text Erlang
+Hypertext Erlang
+================
 
-Erlang extended with HTML-like tags in the expression syntax.
-Aims to be a better (albeit less general) alternative to text template engines.
-This is still a toy project and should not be considered ready for production.
+A compiler for Hypertext Erlang.
 
-## What is it?
+What?
+-----
 
-The traditional approach to generating dynamic web pages is to use a template engine.
-There are many to choose from and they all support substitutions, and to varying degrees data manipulations and flow control.
-Composition is normally supported in the form of partial templates, which can be included in the main template using a special syntax.
+Hypertext Erlang is Erlang extended with HTML-like tags in
+the expression syntax.
 
-Hyper-Text Erlang (Hterl) presents an alternative to this approach.
-Hterl extends Erlang to include HTML tags in the expression syntax.
-Instead of templates you write regular Erlang functions that return HTML.
+The intended purpose is to provide a better alternative to text templating
+engines for generating dynamic web pages.
+
+With Hypertext Erlang you write functions that return HTML.
+The syntax encourages composition by making it seamless to call other
+functions that return HTML themselves; and it works beautifully with
+list comprehensions and the rest of Erlangs syntax.
+
+Here is a small example of how Hypertext Erlang can be used to render
+a table.
 
 ```
-bold(X) -> <b> X </b>.
+results_table(Results) ->
+    SortedResults = lists:sort(Results),
+    <table>
+        <thead>
+            <tr>
+                <th>"Time (mm:ss)"</th>
+                <th>"Player"</th>
+            </tr>
+        </thead>
+        <tbody>
+            [results_row(Result) || Result <- SortedResults]
+        </tbody>
+    </table>.
+
+results_row({Time, Player}) ->
+    <tr>
+        <td>Time</td>
+        <td>Player</td>
+    </tr>.
 ```
 
-Note the absence of substitution markers such as `<% %>` or `{{ }}` around the variable X.
-Because HTML elements are part of the expression syntax, there is no need to switch back and forth between a text mode and code mode.
+Note the absence of substitution markers such as `<% %>` or `{{ }}` around variable names like `Time` and `Player`.
+That is because the body of a tag expression can contain any expression, not just other tag expressions.
+This rule also explains why the header texts `"Time (mm:ss)"` and `"Player"` are quoted&mdash;that's simply how strings are written in Erlang.
+See [Syntax](#syntax) for more.
 
-### Syntax
+Usage
+-----
 
-The syntax is not HTML, only HTML-like.
+Include `hterl` as a dependency in your `rebar.config`, and add the `rebar3_hterl` plugin (found in a [separate repository](https://github.com/abxy/rebar3_hterl/)).
 
-Hterl elements can be written with an opening tag and a matching closing tag `<div> [...] </div>` or as a self-closing tag `<div/>` but never as an opening tag without a closing tag.
-The reason is that the Hterl parser is not aware of which elements are considered _empty_ according to the HTML spec.
+```
+{deps, [{hterl, "0.9.0"}]}.
+
+{plugins, [rebar3_hterl]}.
+```
+
+The plugin registers as a compiler for `.hterl` files, so `rebar3 compile` and all the rest of the rebar commands should just work.
+
+Create Hypertext Erlang modules in `src/` or a sub-folder, name the source files something like `example.hterl`.
+
+Here is a tiny example to get you started.
+
+```
+-module(example).
+
+-export([unordered_list/1]).
+
+unordered_list(Xs) ->
+	<ul>
+		[<li> X </li> || X <- Xs]
+	</ul>.
+```
+
+Run `rebar3 shell` to compile the application and start a shell.
+In the shell, you can use.
+
+```
+1> hterl:render_binary(example:unordered_list(["One", "Two", "Three"])).
+<<"<ul><li>One</li><li>Two</li><li>Three</li></ul>">>
+```
+
+**Note:** Normally you would use `hterl:render/1` which returns `iodata()` and to unnecessary copying, but a binary is easier to read so it's used here.
+
+If you're interested you can also see
+
+```
+1> example:unordered_list(["One", "Two", "Three"]).
+{pre_html, [<<"<ul>">>, [
+	[<<"li">>, <<"One">>, <<"</li>">>],
+	[<<"li">>, <<"Two">>, <<"</li>">>],
+	[<<"li">>, <<"Three">>, <<"</li>">>]
+], <<"</ul>">>]}
+```
+
+Implementation
+--------------
+
+Hypertext Erlang is based on the official Erlang toolchain,
+re-using as much as possible.
+Tokenization is done using Erlang's scanner, followed by
+a post-processing step to rewrite some token sequences. <!-- For instance, a `<` token followed by an `{atom, "h1"}` token is fused to a `{tag_start, "h1"}` token. -->
+The parser is generated using `yecc` and a modified copy of the Erlang grammar.
+The compiler works by transforming syntax tree containing tag-expressions to
+a plain Erlang parse tree, which is then compiled using Erlang's compiler.
+
+Tag expressions are compiled to expressions that construct `iodata()` directly.
+
+
+
+Syntax
+======
+
+The syntax is not quite HTML, but it should be familiar enough.
+This section explains the different syntax rules with examples for each.
+
+Tags
+----
+
+Tag expressions be written with an opening tag and a _matching_ closing tag `<div> [...] </div>`
+or as a self-closing tag `<br />` but never as an opening tag without a closing tag.
+This is because the parser is not aware of which elements are considered _empty_
+according to the HTML spec.
+
+
+Body
+----
 
 The body of an element is a comma separated list of expressions whose results are concatenated in the output.
 
 ```
 greet(Name) ->
-	<span> "Hello, ", <u> Name </u>, "!" </span>.
+    <span> "Hello, ", <u> Name </u>, "!" </span>.
 ```
 
-Given the above definition `greet("Joe")` evaluates to `<span>Hello, <u>Joe</u>!</span>`.
-Note that the static strings are quoted. This is a logical consequence of the rule that says that the body of an element is an expression.
+Given the above definition `greet("Joe")` renders `<span>Hello, <u>Joe</u>!</span>`.
+Note that the text in the body of an element has to be quoted.
+This is a logical consequence of the rule that says that any expression is allowed in the body of an tag expression.
 
-Elements that follow each other are concatenated into a single expression, therefore no comma is needed between the `<li>` elements in the following example.
+Whitespace
+----------
+Spaces and line breaks, in and around tags, are ignored. If you want the output to contain space between elements in the body, you have to explicitly include it.
+
+```
+whitespace(Name) ->
+    <div>
+        <span></span>, " ", <span></span>
+    </div>.
+```
+
+Concatenation
+-------------
+
+Adjacent tag expressions are concatenated into a single expression, therefore no comma is needed between the `<li>` elements below.
 
 ```
 prizes() ->
@@ -58,29 +174,64 @@ definition(Term, Definition) ->
 
 ```
 
-Attributes are supported, and like element bodies their values are written as bare expressions
-meaning literal strings have to be quoted, but variables do not. 
+If this upsets you, consider that many programming languages, including Erlang, concatenate strings in a similar fashion.
+
+```
+strings() ->
+    "These two strings are "
+    "concatenated into one.".
+
+```
+
+Attributes
+----------
+
+Attribute values are also written as bare expressions,
+meaning literal strings have to be quoted, but variables do not.
 
 ```
 french_hello() ->
-	<i lang="fr">"Bonjour le monde!"</i>.
+    <i lang="fr">"Bonjour le monde!"</i>.
 
 link(Text, Url) ->
-	<a href=Url>Text</a>.
+    <a href=Url>Text</a>.
 ```
 
-Unlike element bodies, some expression forms need to be surrounded by parentheses when they appear as attributes.
+Some expression forms need to be surrounded by parentheses when they appear as attributes.
 Notably, function calls have this requirement.
-This restriction may be relaxed in future.
 
-There is no support for for HTML style comments `<!-- -->` but Erlang comments are fully supported.
+```
+badge(Type, Content) ->
+    <span class=(badge_class(Type))>Content</i>.
+
+badge_class(pill) ->
+    "badge badge-pill";
+badge_class(_) ->
+    "badge".
+```
+
+Hypertext Erlang requires all attribute names to be valid Erlang atoms.
+In practice, this means that you have to quote attributes that contain dashes like `aria-labelledby`.
+
+```
+dialog(Header, Content) ->
+	<div role="dialog" 'aria-labelledby'="dialogheader">
+		<h2 id="dialogheader">Header</h2>,
+		Content
+	</div>.
+```
+
+Comments
+--------
+
+There is no support for for HTML style comments `<!-- -->`, but Erlang comments are fully supported.
 
 ```
 erlang_comments() ->
     <p>
         % Erlang comments may appear inside element bodies, ...
         "This is a paragraph of text"
-        " which continues on the next line."        
+        " which continues on the next line."
     </p>
     % between elements, ...
     <span
@@ -89,123 +240,8 @@ erlang_comments() ->
     </span>.
 ```
 
-### Semantics
+Options
+=======
 
-Values of the following types are valid in the body of an HTML element: strings, characters (i.e. integers between 0 and 255), binaries, and HTML elements.
-Additionally lists of valid values are valid.
-
-Because Hterl is only an extension of Erlang at the syntax level, the HTML elements have to be embedded in the existing universe of Erlang values.
-This has already been done by EHTML in [Yaws](http://yaws.hyber.org/).
-Hterl has two output modes and both are compatible with EHTML.
-In the default mode `<p class="greeting"> "Hello, World!" </p>` is compiled to `{p, [{class, "greeting"}], ["Hello, World!"]}`, in the pre-compile mode
-the same expression is compiled to `{pre_html, <<"<p class=\"greeting\">Hello, World!</p>">>}`.
-
-
-## Use
-
-Include hterl as a dependency in your rebar config, or add the [rebar3_hterl plugin](https://github.com/abxy/rebar3_hterl/).
-
-```
-{deps, [
-    {hterl, {git, "https://github.com/abxy/hterl.git", {branch, "master"}}}
-]}.
-```
-
-### Example
-
-Create a file `test.hterl` with the following content.
-
-```
--module(test).
--export([unordered_list/1]).
-
-unordered_list(Xs) ->
-	<ul>
-		[ <li> X </li> || X <- Xs ]
-	</ul>.
-```
-
-Compile it to Erlang code by running `hterl:file("test.hterl")`,
-producing the following output in `test.erl`.
-
-```
--module(test).
-
--export([unordered_list/1]).
-
-unordered_list(Xs) ->
-    {ul,
-     [],
-     [ 
-      {li,[],X} ||
-          X <- Xs
-     ]}.
-```
-
-Compile and test the module.
-
-```
-> c("test.erl").
-{ok, test}
-> test:unordered_list(["One", "Two"]).
-{ul,[],[{li,[],"One"},{li,[],"Two"}]}
-```
-
-The output can be rendered as iodata using `hterl_api:render`.
-
-```
-> hterl_api:render(test:unordered_list(["One", "Two"])).
-[<<"<ul">>,[],<<">">>,
- [[<<"<li">>,[],<<">">>,<<"One">>,<<"</li>">>],
-  [<<"<li">>,[],<<">">>,<<"Two">>,<<"</li>">>]],
- <<"</ul>">>]
-```
-
-#### Example: Pre-rendered output
-
-Re-compile the original file using option `precompile` .
-
-```
-> hterl:file("test.hterl", [precompile]).
-ok
-```
-
-This produces the following the output in `test.erl`.
-
-```
--module(test).
-
--export([unordered_list/1]).
-
-unordered_list(Xs) ->
-    {pre_html,
-     [<<"<ul>"/utf8>>,
-      [ 
-       [<<"<li>"/utf8>>,hterl_api:interpolate(X, utf8),<<"</li>"/utf8>>] ||
-           X <- Xs
-      ],
-      <<"</ul>"/utf8>>]}.
-```
-
-Compile and test the module.
-
-```
-> c("test.erl").
-{ok, test}
-> test:unordered_list(["One", "Two"]).
-{pre_html,[<<"<ul>">>,
-           [[<<"<li>">>,<<"One">>,<<"</li>">>],
-            [<<"<li>">>,<<"Two">>,<<"</li>">>]],
-           <<"</ul>">>]}
-> hterl_api:render(test:unordered_list(["One", "Two"])).
-[<<"<ul>">>,
- [[<<"<li>">>,<<"One">>,<<"</li>">>],
-  [<<"<li>">>,<<"Two">>,<<"</li>">>]],
- <<"</ul>">>]
-```
-
-## Build
-
-```
-$ rebar3 compile
-```
+* `output` (default: `beam`): Sets the output format, possible values are `beam` and `erl`.
+* `outdir` (Optional): If set to a directory path, the output files will be put in this directory. Only relevant in standalone mode as the `rebar3_hterl` plugin overrides it.

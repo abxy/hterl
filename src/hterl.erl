@@ -1,10 +1,11 @@
 -module(hterl).
 
-
 -export([file/1, file/2]).
 
--export([report_error/1]).
 -export([format_error/1]).
+
+-export([render/1, render/2]).
+-export([render_binary/1, render_binary/2]).
 
 -define(DEFAULT_ENCODING, utf8).
 
@@ -39,6 +40,18 @@ file(Path) ->
 file(Path, Options) ->
     St = start(Path, #state{options = Options}),
     infile(St).
+
+render(Ehtml) ->
+    hterl_api:render(Ehtml).
+
+render(Ehtml, Encoding) ->
+    hterl_api:render(Ehtml, Encoding).
+
+render_binary(Ehtml) ->
+    iolist_to_binary(hterl_api:render(Ehtml)).
+
+render_binary(Ehtml, Encoding) ->
+    iolist_to_binary(hterl_api:render(Ehtml, Encoding)).
 
 %%====================================================================
 %% Internal functions
@@ -132,13 +145,22 @@ write_form(Port, Form) ->
     PP = erl_pp:form(Form),
     ok = file:write(Port, [PP, $\n]).
 
-report_errors(St) ->
-    lists:foreach(fun report_error/1, lists:sort(St#state.errors)).
+report_errors(St = #state{options=Opts}) ->
+    case lists:member(report_errors, Opts) of
+        true ->
+            Sorted = lists:sort(St#state.errors),
+            lists:foreach(
+                fun({File, Es}) -> list_errors(File, Es) end, Sorted);
+        false -> ok
+    end.
 
-report_error({File, {none, Mod, E}}) ->
-    io:fwrite(<<"~ts: ~ts\n">>, [File,Mod:format_error(E)]);
-report_error({File, {Line, Mod, E}}) ->
-    io:fwrite(<<"~ts:~w: ~ts\n">>, [File,Line,Mod:format_error(E)]).
+list_errors(_File, []) -> ok;
+list_errors(File, [{none, Mod, E}|Es]) ->
+    io:fwrite(<<"~ts: ~ts\n">>, [File,Mod:format_error(E)]),
+    list_errors(File, Es);
+list_errors(File, [{Line, Mod, E}|Es]) ->
+    io:fwrite(<<"~ts:~w: ~ts\n">>, [File,Line,Mod:format_error(E)]),
+    list_errors(File, Es).
 
 parse(St0) ->
     St = parse_next(St0#state.inport, St0),
@@ -173,7 +195,7 @@ read_form(Epp) ->
 
 -spec rewrite(tags() | syntaxTree(), state()) -> {syntaxTree(), state()}.
 rewrite({tags, _Anno, Tags}, St) ->
-    case proplists:get_bool(precompile, St#state.options) of
+    case proplists:get_value(precompile, St#state.options, true) of
         true -> rewrite_tags_pre(Tags, St);
         false -> rewrite_tags_ehtml(Tags, St)
     end;
@@ -437,7 +459,7 @@ add_error(Anno, E, St) ->
 
 add_error(File, Anno, E, St) ->
     Loc = location(Anno),
-    St#state{errors = [{File, {Loc,?MODULE,E}}|St#state.errors]}.
+    St#state{errors = [{File, [{Loc,?MODULE,E}]}|St#state.errors]}.
 
 format_error({invalid_character, Encoding}) ->
     io_lib:fwrite("invalid character for encoding ~tw", [Encoding]);
