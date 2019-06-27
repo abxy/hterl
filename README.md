@@ -1,6 +1,8 @@
 Hypertext Erlang
 ================
 
+[![Hex.pm](https://img.shields.io/hexpm/v/hterl.svg?style=flat)](https://hex.pm/packages/hterl)
+
 A compiler for Hypertext Erlang.
 
 What?
