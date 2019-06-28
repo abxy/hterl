@@ -85,11 +85,13 @@ In the shell, you can use.
 <<"<ul><li>One</li><li>Two</li><li>Three</li></ul>">>
 ```
 
-**Note:** Normally you would use `hterl:render/1` which returns `iodata()` and to unnecessary copying, but a binary is easier to read so it's used here.
+**Note:** Normally you would use `hterl:render/1` which returns `iodata()` to avoid unnecessary copying, but a binary is easier to read so it's used here.
 
-If you're interested you can also see
+If you just call `unordered_list` without rendering, you can see that the output is a tagged tuple containing an `iolist()`. The tag is used by `hterl` to recognize that the output should not be escaped if it appears in another tag expression.
+The `render/1` function will simply extract the `iolist()`.
 
 ```
+
 1> example:unordered_list(["One", "Two", "Three"]).
 {pre_html, [<<"<ul>">>, [
 	[<<"li">>, <<"One">>, <<"</li>">>],
@@ -97,6 +99,38 @@ If you're interested you can also see
 	[<<"li">>, <<"Three">>, <<"</li>">>]
 ], <<"</ul>">>]}
 ```
+
+Output
+------
+
+Tag expressions are compiled to expressions that construct `iodata()` directly,
+literal strings in tag expressions are encoded and escaped on compile time,
+everything else is escaped on runtime.
+
+The compiler tries to coalesce contiguous binary fragments on compile time,
+to keep the runtime overhead as small as possible.
+
+```
+% source
+coalesce_example(Content) ->
+    <h1>"My Header"</h1>
+    <p>Content</p>.
+```
+
+The function `coalesce_example/1` above is compiled to the following plain Erlang function.
+Note how the first binary fragment contains `"<h1>My Header</h1><p>"`, i.e. it has
+coalesced the starting entire `h1` element with the starting tag of the `p` element. It can't go any further because the value of `Content` is unknown in compile time.
+
+```
+% compiled
+coalesce_example(Content) ->
+    {pre_html,
+     [<<"<h1>My Header</h1><p>"/utf8>>,
+      hterl_api:interpolate(Content, utf8),
+      <<"</p>"/utf8>>]}.
+```
+
+As you can see in the compiled version, the `Content` variable is wrapped with a call to `hterl_api:interpolate/2`. This function will escape unsafe values (strings, binaries and characters), encode strings, and unwrap `{pre_html, iodata()}` terms produced by other tag expressions.
 
 Implementation
 --------------
@@ -108,10 +142,6 @@ a post-processing step to rewrite some token sequences. <!-- For instance, a `<`
 The parser is generated using `yecc` and a modified copy of the Erlang grammar.
 The compiler works by transforming syntax tree containing tag-expressions to
 a plain Erlang parse tree, which is then compiled using Erlang's compiler.
-
-Tag expressions are compiled to expressions that construct `iodata()` directly.
-
-
 
 Syntax
 ======
