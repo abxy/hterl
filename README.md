@@ -22,7 +22,7 @@ list comprehensions and the rest of Erlangs syntax.
 Here is a small example of how Hypertext Erlang can be used to render
 a table.
 
-```
+```erlang
 results_table(Results) ->
     SortedResults = lists:sort(Results),
     <table>
@@ -54,7 +54,7 @@ Usage
 
 Include `hterl` as a dependency in your `rebar.config`, and add the `rebar3_hterl` plugin (found in a [separate repository](https://github.com/abxy/rebar3_hterl/)).
 
-```
+```erlang
 {deps, [{hterl, "0.10.0"}]}.
 
 {plugins, [rebar3_hterl]}.
@@ -66,7 +66,7 @@ Create Hypertext Erlang modules in `src/` or a sub-folder, name the source files
 
 Here is a tiny example to get you started.
 
-```
+```erlang
 -module(example).
 
 -export([unordered_list/1]).
@@ -91,7 +91,6 @@ If you just call `unordered_list` without rendering, you can see that the output
 The `render/1` function will simply extract the `iolist()`.
 
 ```
-
 1> example:unordered_list(["One", "Two", "Three"]).
 {pre_html, [<<"<ul>">>, [
 	[<<"li">>, <<"One">>, <<"</li>">>],
@@ -110,7 +109,7 @@ everything else is escaped on runtime.
 The compiler tries to coalesce contiguous binary fragments on compile time,
 to keep the runtime overhead as small as possible.
 
-```
+```erlang
 % source
 coalesce_example(Content) ->
     <h1>"My Header"</h1>
@@ -121,7 +120,7 @@ The function `coalesce_example/1` above is compiled to the following plain Erlan
 Note how the first binary fragment contains `"<h1>My Header</h1><p>"`, i.e. it has
 coalesced the starting entire `h1` element with the starting tag of the `p` element. It can't go any further because the value of `Content` is unknown in compile time.
 
-```
+```erlang
 % compiled
 coalesce_example(Content) ->
     {pre_html,
@@ -163,7 +162,7 @@ Body
 
 The body of an element is a comma separated list of expressions whose results are concatenated in the output.
 
-```
+```erlang
 greet(Name) ->
     <span> "Hello, ", <u> Name </u>, "!" </span>.
 ```
@@ -176,7 +175,7 @@ Whitespace
 ----------
 Spaces and line breaks, in and around tags, are ignored. If you want the output to contain space between elements in the body, you have to explicitly include it.
 
-```
+```erlang
 whitespace(Name) ->
     <div>
         <span></span>, " ", <span></span>
@@ -190,7 +189,7 @@ Concatenation
 
 Adjacent tag expressions are concatenated into a single expression, therefore no comma is needed between the `<li>` elements below.
 
-```
+```erlang
 prizes() ->
     <ol>
         <li>"Gold Medal"</li>
@@ -201,7 +200,7 @@ prizes() ->
 
 The concatenation rule is enabled everywhere, not just within element bodies.
 
-```
+```erlang
 definition(Term, Definition) ->
     <dt>Term</dt>
     <dd>Definition</dd>.
@@ -210,7 +209,7 @@ definition(Term, Definition) ->
 
 If this upsets you, consider that many programming languages, including Erlang, concatenate strings in a similar fashion.
 
-```
+```erlang
 strings() ->
     "These two strings are "
     "concatenated into one.".
@@ -223,7 +222,7 @@ Attributes
 Attribute values are also written as bare expressions,
 meaning literal strings have to be quoted, but variables do not.
 
-```
+```erlang
 french_hello() ->
     <i lang="fr">"Bonjour le monde!"</i>.
 
@@ -234,7 +233,7 @@ link(Text, Url) ->
 Some expression forms need to be surrounded by parentheses when they appear as attributes.
 Notably, function calls have this requirement.
 
-```
+```erlang
 message(Type, Content) ->
     <span class=(message_class(Type))>Content</span>.
 
@@ -247,7 +246,7 @@ message_class(_) ->
 Hypertext Erlang requires all attribute names to be valid Erlang atoms.
 In practice, this means that you have to quote attributes that contain dashes like `aria-labelledby`.
 
-```
+```erlang
 dialog(Header, Content) ->
 	<div role="dialog" 'aria-labelledby'="dialogheader">
 		<h2 id="dialogheader">Header</h2>,
@@ -260,7 +259,7 @@ Comments
 
 There is no support for for HTML style comments `<!-- -->`, but Erlang comments are fully supported.
 
-```
+```erlang
 erlang_comments() ->
     <p>
         % Erlang comments may appear inside element bodies, ...
