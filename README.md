@@ -183,6 +183,8 @@ whitespace(Name) ->
     </div>.
 ```
 
+**Output:** `<div><span></span> <span></span></div>`
+
 Concatenation
 -------------
 
